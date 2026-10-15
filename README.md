@@ -145,3 +145,7 @@ It carries the fence contract, one example per family, the option names and the 
 - Interactive charts are out of scope: a fence is a picture, not a widget.
 - The `mermaid` language belongs to OpenCode's built-in renderer. A plugin cannot extend it (the markdown registry is exclusive), so the families Mermaid supports and this library does not — gantt, gitgraph, timeline, mindmap, quadrant, requirements, C4, packet, block, architecture, radar-ish and the rest — would need an upstream change, not a plugin.
 - Octant glyphs need Unicode 16 (2024) in your terminal font. The default is sextant; `"mosaic": "octant"` opts in.
+
+## License
+
+MIT. See [LICENSE](LICENSE).
