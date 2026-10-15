@@ -84,6 +84,12 @@ This skill ships with [opencode-chart-tui](https://github.com/acastro2/opencode-
 {"type":"kanban","title":"Sprint","height":14,"columns":[{"title":"Todo","cards":[{"title":"Ship the sankey","meta":"@ana"}]},{"title":"Doing","cards":[{"title":"Radar labels","meta":"@rui"}]},{"title":"Done","cards":[{"title":"Waterfall","meta":"@ana"}]}]}
 ```
 
+```chart
+{"type":"gantt","title":"Rollout plan","height":11,"today":"2026-11-14","tasks":[{"label":"Design","group":"Discovery","start":"2026-11-02","end":"2026-11-13"},{"label":"Stakeholder sign-off","group":"Discovery","start":"2026-11-13","end":"2026-11-17"},{"label":"Build","group":"Delivery","start":"2026-11-16","end":"2026-12-04"},{"label":"Test","group":"Delivery","start":"2026-11-30","end":"2026-12-11"},{"label":"Launch","group":"Delivery","at":"2026-12-14","milestone":true}]}
+```
+
+A `gantt` task takes `label` plus `start` and `end` (numbers, or ISO dates like `2026-11-02`), or `at` for a milestone. `group` starts a section, `today` draws the vertical marker.
+
 ## Options worth knowing
 
 | key | meaning |

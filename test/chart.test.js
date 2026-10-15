@@ -72,6 +72,13 @@ const specs = {
       { title: "Doing", cards: [{ title: "Review" }] },
     ],
   },
+  gantt: {
+    type: "gantt",
+    width: 56,
+    height: 10,
+    today: 5,
+    tasks: [{ label: "Plan", start: 0, end: 3 }, { label: "Build", start: 3, end: 8 }, { label: "Launch", at: 9, milestone: true }],
+  },
   table: {
     type: "table",
     width: 46,

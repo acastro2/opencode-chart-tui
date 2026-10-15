@@ -101,4 +101,17 @@ export const SAMPLES = {
       { title: "Done", cards: [{ title: "Waterfall", meta: "@ana" }, { title: "Table" }] },
     ],
   },
+  gantt: {
+    title: "Rollout plan",
+    height: 11,
+    today: "2026-11-14",
+    tasks: [
+      { label: "Design", group: "Discovery", start: "2026-11-02", end: "2026-11-13" },
+      { label: "Stakeholder sign-off", group: "Discovery", start: "2026-11-13", end: "2026-11-17" },
+      { label: "Build", group: "Delivery", start: "2026-11-16", end: "2026-12-04" },
+      { label: "Test", group: "Delivery", start: "2026-11-30", end: "2026-12-11" },
+      { label: "Launch", group: "Delivery", at: "2026-12-14", milestone: true },
+      { label: "Hypercare", group: "Delivery", start: "2026-12-14", end: "2027-01-08" },
+    ],
+  },
 };

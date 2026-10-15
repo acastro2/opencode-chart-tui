@@ -1,6 +1,6 @@
 # opencode-chart-tui
 
-**22 chart families, drawn inside the OpenCode terminal from a fenced code block.**
+**23 chart families, drawn inside the OpenCode terminal from a fenced code block.**
 
 You type a ```chart fence with a JSON body; the plugin draws it in place — pie, donut, bar, line, area, scatter, histogram, candlestick, waterfall, heat map, gauge, radar, treemap, sankey, kanban — in colour, at sub-cell resolution, on your terminal's own theme.
 
@@ -28,6 +28,7 @@ text here. Paste one into OpenCode and it renders.
 | ![table](assets/table.svg) | ![radar](assets/radar.svg) |
 | ![treemap](assets/treemap.svg) | ![sankey](assets/sankey.svg) |
 | ![kanban](assets/kanban.svg) | ![candle](assets/candle.svg) |
+| ![gantt](assets/gantt.svg) |  |
 
 <details>
 <summary><b>Every fence, ready to paste</b></summary>
@@ -164,6 +165,12 @@ text here. Paste one into OpenCode and it renders.
 {"type":"candle","title":"ACME","labels":["Mon","Tue","Wed","Thu","Fri"],"candles":[{"open":10,"high":14,"low":8,"close":12},{"open":12,"high":13,"low":9,"close":10},{"open":10,"high":12,"low":7,"close":11},{"open":11,"high":15,"low":10,"close":14},{"open":14,"high":16,"low":12,"close":13}],"height":12}
 ```
 
+**`gantt`**
+
+```chart
+{"type":"gantt","title":"Rollout plan","height":11,"today":"2026-11-14","tasks":[{"label":"Design","group":"Discovery","start":"2026-11-02","end":"2026-11-13"},{"label":"Stakeholder sign-off","group":"Discovery","start":"2026-11-13","end":"2026-11-17"},{"label":"Build","group":"Delivery","start":"2026-11-16","end":"2026-12-04"},{"label":"Test","group":"Delivery","start":"2026-11-30","end":"2026-12-11"},{"label":"Launch","group":"Delivery","at":"2026-12-14","milestone":true},{"label":"Hypercare","group":"Delivery","start":"2026-12-14","end":"2027-01-08"}]}
+```
+
 </details>
 
 ## Install
@@ -227,6 +234,7 @@ Press nothing, run nothing: the fence is replaced by the drawing as soon as it i
 | `treemap` | `items: [{label, value, children}]` | groups hold their children as bands |
 | `sankey` | `nodes`, `links: [{from, to, value}]` | columns declared or layered from the links |
 | `kanban` | `columns: [{title, cards}]` or a flat `cards` list | `columnWidth`, `order` |
+| `gantt` | `tasks: [{label, start, end, group, milestone}]` | `start`/`end` take numbers or ISO dates, `at` is a milestone, `today` draws the line |
 
 Shared keys: `title`, `width`, `height`, `theme` (`dark` | `light`), `palette`, `legend`, `mosaic` (`sextant` default, `octant` for Unicode 16 fonts, `quadrant` for the widest support), `textured`, `boundaryColor`.
 
@@ -263,7 +271,7 @@ renderChartRows({ type: "bar", labels: ["a", "b"], values: [3, 5] });  // rows o
 | `chart.js` | dispatcher, tolerant fence parser, note footer |
 
 ```sh
-npm test          # 160 checks across 15 suites
+npm test          # 173 checks across 16 suites
 npm run accuracy  # the pie rim against the analytic ellipse
 node scripts/dump.mjs 58     # every family as plain text → review/renders.txt
 node scripts/images.mjs 76   # every family as an SVG → assets/

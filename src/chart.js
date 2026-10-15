@@ -23,6 +23,7 @@ import { renderRadarRows } from "./radar.js";
 import { renderTreemapRows } from "./treemap.js";
 import { renderSankeyRows } from "./sankey.js";
 import { renderKanbanRows } from "./kanban.js";
+import { renderGanttRows } from "./gantt.js";
 
 export const CHART_TYPES = {
   pie: renderPieRows,
@@ -47,6 +48,7 @@ export const CHART_TYPES = {
   treemap: renderTreemapRows,
   sankey: renderSankeyRows,
   kanban: renderKanbanRows,
+  gantt: renderGanttRows,
 };
 
 /**

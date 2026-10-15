@@ -22,7 +22,8 @@
     "./radar": "./src/radar.js",
     "./treemap": "./src/treemap.js",
     "./sankey": "./src/sankey.js",
-    "./kanban": "./src/kanban.js"
+    "./kanban": "./src/kanban.js",
+    "./gantt": "./src/gantt.js"
   },
   "scripts": {
     "test": "node test/run.js",
