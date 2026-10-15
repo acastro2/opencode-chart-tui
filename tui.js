@@ -59,6 +59,22 @@ function cellAspectOption(context) {
   return Number.isFinite(value) && value >= 1 && value <= 4 ? value : undefined;
 }
 
+/**
+ * The cell's own height-over-width, measured from the terminal when it reports
+ * pixels. This is what makes a disc round without anyone configuring it; it is
+ * absent on terminals that do not answer the pixel query, and the option and
+ * the default take over then.
+ */
+function measuredAspect(context) {
+  const renderer = context?.renderer;
+  const resolution = renderer?.resolution;
+  const columns = renderer?.width ?? renderer?.terminalWidth;
+  const rows = renderer?.height ?? renderer?.terminalHeight;
+  if (!resolution || !(columns > 0) || !(rows > 0)) return undefined;
+  const aspect = (resolution.height / rows) / (resolution.width / columns);
+  return Number.isFinite(aspect) && aspect >= 1 && aspect <= 4 ? Number(aspect.toFixed(2)) : undefined;
+}
+
 function rowsNode(context, rows, palette, theme) {
   const box = new BoxRenderable(context.renderer, {
     flexDirection: "column",
@@ -127,7 +143,7 @@ export default {
             // wide frame reads as flat bands, where bars and lines stay useful.
             const cap = GRID_FAMILIES.has(spec.type) ? 110 : 160;
             const width = Math.max(20, Math.min(Number(spec.width) || Math.min(available, cap), available));
-            const rows = renderChartRows({ ...spec, theme: spec.theme ?? mode, width, cellAspect: spec.cellAspect ?? cellAspectOption(context) });
+            const rows = renderChartRows({ ...spec, theme: spec.theme ?? mode, width, cellAspect: spec.cellAspect ?? measuredAspect(context) ?? cellAspectOption(context) });
             return rowsNode(context, rows, paletteOf(spec) ?? themed.palette, themed);
           } catch (failure) {
             debug(`render failed: ${failure?.stack ?? failure?.message ?? failure}`);
@@ -139,6 +155,7 @@ export default {
         debug(`could not register "${language}": ${error?.message}`);
       }
     }
-    debug(`cell aspect option: ${cellAspectOption(context) ?? "default 2"}`);
+    debug(`cell aspect option: ${cellAspectOption(context) ?? "none"}`);
+    debug(`cell aspect measured: ${measuredAspect(context) ?? "none"}`);
   },
 };
