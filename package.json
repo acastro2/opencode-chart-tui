@@ -1,11 +1,11 @@
 {
   "name": "opencode-charts",
   "version": "0.1.0",
-  "private": true,
   "type": "module",
-  "description": "Terminal chart rendering for the OpenCode TUI: 22 families from a JSON fence, dependency-free ES modules",
+  "description": "Terminal chart rendering for the OpenCode TUI: 23 families from a JSON fence, dependency-free ES modules",
   "main": "./src/chart.js",
   "exports": {
+    "./tui": "./tui.js",
     ".": "./src/chart.js",
     "./core": "./src/core.js",
     "./axis": "./src/axis.js",
@@ -30,6 +30,13 @@
     "accuracy": "node scripts/accuracy.mjs",
     "demo": "node scripts/demo.mjs",
     "variants": "node scripts/variants.mjs"
+  },
+  "files": [
+    "tui.js",
+    "src/"
+  ],
+  "peerDependencies": {
+    "@opentui/core": ">=0.5.17"
   },
   "engines": {
     "node": ">=22"
