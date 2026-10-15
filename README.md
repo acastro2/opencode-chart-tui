@@ -175,27 +175,32 @@ text here. Paste one into OpenCode and it renders.
 
 ## Install
 
-The plugin is a directory with a `tui.js` entrypoint. Clone it anywhere and point OpenCode at it.
+It is a native OpenCode plugin. OpenCode discovers any directory under
+`~/.config/opencode/plugins/` that holds a `tui.js`, so the install is a clone —
+no config file mentions it:
 
 ```sh
-git clone https://github.com/acastro2/opencode-chart-tui ~/.config/opencode/charts
+git clone https://github.com/acastro2/opencode-chart-tui ~/.config/opencode/plugins/opencode-chart-tui
 ```
 
-Then add it to the CLI plugin list in `~/.config/opencode/cli.json`:
+Restart the TUI once (plugins load at startup). That is the whole install.
 
-```json
-{
-  "plugins": ["./charts"]
-}
-```
-
-Or keep the repo where you develop it and symlink the directory into the config folder:
+Developing it? Keep your checkout where it is and point the discovery directory at it:
 
 ```sh
-ln -s ~/Developer/opencode-chart-tui ~/.config/opencode/charts
+ln -s ~/Developer/opencode-chart-tui ~/.config/opencode/plugins/opencode-chart-tui
 ```
 
-The plugin has no dependencies of its own: `@opentui/core` and the OpenCode plugin API are resolved from the host at runtime. Restart the TUI once after the first install (plugins load at startup).
+`src/` edits are live at the next render; a `tui.js` edit needs a restart.
+
+<details>
+<summary><b>Other ways to load it, if you need them</b></summary>
+
+- **Through the server.** List the plugin in `opencode.json(c)` under `plugins`. A plugin that exposes a TUI component is loaded by the CLI automatically, so the same entry needs no `cli.json` counterpart — and it works when the CLI is connected to a remote server.
+- **CLI-only.** `cli.json` → `plugins` takes an npm id (`pkg`, `pkg@1.0.0`, `@scope/pkg`), a relative or absolute path, or a `file://` URL; the object form `{ "package": "…", "options": { … } }` passes options. Use it for a plugin that must stay active with a remote server, or when you want the entry in one file.
+- **No dependencies of its own.** `@opentui/core` and the OpenCode plugin API resolve from the host at runtime, so nothing is installed beside the repo.
+
+</details>
 
 ## Use
 

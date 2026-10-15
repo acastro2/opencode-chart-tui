@@ -140,9 +140,10 @@ The probe imports the real plugin, stubs
 `@opentui/core/testing` and reports `width mismatches` per frame. Any change to
 `tui.js` deserves that run before you claim it works.
 
-**Development is live, the plugin is not.** `~/.config/opencode/charts` is a
-symlink to this repo, so `src/*.js` edits appear at the next render; a change to
-`tui.js` needs the TUI restarted.
+**Development is live, the plugin is not.** `~/.config/opencode/plugins/opencode-chart-tui`
+is a symlink to this repo, which is how OpenCode discovers the plugin at all (a
+discovery directory holding `tui.js` needs no config entry). `src/*.js` edits
+appear at the next render; a change to `tui.js` needs the TUI restarted.
 
 ## 5. Verification discipline (what "done" means here)
 
