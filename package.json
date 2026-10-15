@@ -3,10 +3,10 @@
   "version": "0.1.0",
   "type": "module",
   "description": "Terminal chart rendering for the OpenCode TUI: 23 families from a JSON fence, dependency-free ES modules",
-  "main": "./src/chart.js",
+  "main": "./index.js",
   "exports": {
     "./tui": "./tui.js",
-    ".": "./src/chart.js",
+    ".": "./index.js",
     "./core": "./src/core.js",
     "./axis": "./src/axis.js",
     "./mosaic": "./src/mosaic.js",
@@ -32,6 +32,7 @@
     "variants": "node scripts/variants.mjs"
   },
   "files": [
+    "index.js",
     "tui.js",
     "src/"
   ],
