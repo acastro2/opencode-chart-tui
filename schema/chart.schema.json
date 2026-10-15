@@ -1,0 +1,110 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://platformtoolsmith.com/schemas/opencode-chart.schema.json",
+  "title": "OpenCode chart fence",
+  "description": "Body of a ```chart fenced block. A JSON object; one chart per block. 'type' is strongly recommended: when it is missing the shape of the data decides (slices -> pie, columns+rows -> table, rows -> heatmap, values/series -> bar). Unknown keys are ignored, and the renderer prints a muted footer when it had to rename a key, treat a value as 0, or guess the type.",
+  "type": "object",
+  "additionalProperties": true,
+  "properties": {
+    "type": {
+      "description": "The family to draw.",
+      "enum": [
+        "pie", "donut",
+        "bar", "column", "hbar",
+        "histogram", "candle", "candlestick", "ohlc",
+        "line", "area", "sparkline", "scatter",
+        "heatmap", "gauge", "progress",
+        "waterfall", "table",
+        "radar", "treemap", "sankey", "kanban"
+      ]
+    },
+    "title": { "type": "string", "description": "Bold heading above the chart." },
+    "width": { "type": "integer", "minimum": 16, "description": "Chart columns. Clamped to the terminal width minus 6." },
+    "height": { "type": "integer", "minimum": 1, "description": "Rows for the plot area (per family)." },
+    "theme": { "enum": ["dark", "light"], "description": "Colour set. Defaults to the terminal theme." },
+    "palette": { "type": "array", "items": { "type": "string", "pattern": "^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$" }, "description": "Overrides the theme palette." },
+    "mosaic": { "enum": ["sextant", "octant", "quadrant", false], "description": "Sub-cell glyph set. Default sextant (Unicode 13); octant is finer but Unicode 16, so only use it when the font is known to carry it." },
+    "legend": { "type": "boolean", "default": true },
+    "labels": { "type": "array", "items": { "type": "string" }, "description": "Category names or axis names, in data order." },
+    "values": {
+      "oneOf": [
+        { "type": "array", "items": { "type": "number" } },
+        { "type": "array", "items": { "type": "array", "items": { "type": "number" } }, "description": "Candles as [open, high, low, close] per period." }
+      ]
+    },
+    "series": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["values"],
+        "properties": {
+          "name": { "type": "string" },
+          "values": { "type": "array", "items": { "type": "number" } }
+        }
+      }
+    },
+    "slices": { "type": "array", "items": { "type": "array", "prefixItems": [{ "type": "string" }, { "type": "number" }] }, "description": "Pie and donut data, as [label, value] pairs." },
+    "points": { "type": "array", "items": { "type": "array", "prefixItems": [{ "type": "number" }, { "type": "number" }] }, "description": "Scatter data, as [x, y] pairs." },
+    "stacked": { "type": "boolean", "description": "Bars and areas: series stack instead of grouping." },
+    "normalized": { "type": "boolean", "description": "Bars and areas: 100% of each label's total. The legend still prints the real totals." },
+    "showPercent": { "type": "boolean", "description": "Single-series bars: print the share beside each value. (The old name 'percent' is accepted and renamed with a note.)" },
+    "boundaryColor": { "type": "string", "description": "Colour of the seam between two series. Defaults to the theme background. (The old name 'gap' is accepted and renamed with a note.)" },
+    "zero": { "type": "boolean", "default": true, "description": "Line, area, scatter and candle: set false for a narrow range so the data fills the plot. Bars always include zero." },
+    "textured": { "type": "boolean", "description": "Bars: a hatch pattern per series, for monochrome terminals." },
+    "bins": { "type": "integer", "minimum": 1, "description": "Histogram: bin count. Default is the square-root rule, capped at 30." },
+    "start": { "type": "number", "description": "Waterfall: the running total before the first delta." },
+    "total": { "type": "boolean", "default": true, "description": "Waterfall: draw the closing total bar." },
+    "totalLabel": { "type": "string", "description": "Waterfall: name of the total bar." },
+    "up": { "type": "string", "description": "Candles and waterfall: colour of an upward move." },
+    "down": { "type": "string", "description": "Candles and waterfall: colour of a downward move." },
+    "candles": { "type": "array", "items": { "type": "object", "required": ["open", "high", "low", "close"] } },
+    "headers": { "type": "array", "items": { "type": "string" }, "description": "Heat map columns. (The old name 'columns' is accepted and renamed with a note.)" },
+    "rows": { "type": "array", "items": { "type": "object", "required": ["values"], "properties": { "label": { "type": "string" }, "values": { "type": "array", "items": { "type": ["number", "null"] } } } } },
+    "cellWidth": { "type": "integer", "minimum": 2, "description": "Heat map: columns per cell. Defaults to the widest header plus one." },
+    "low": { "type": "string", "description": "Heat map and table heat columns: colour for the lowest value." },
+    "high": { "type": "string", "description": "Heat map and table heat columns: colour for the highest value." },
+    "valueLabels": { "type": "boolean", "description": "Heat map and bars: print each value." },
+    "columns": {
+      "type": "array",
+      "description": "Table: column definitions. Each entry is a name or {label, key, type, width, color, align}.",
+      "items": {
+        "oneOf": [
+          { "type": "string" },
+          {
+            "type": "object",
+            "properties": {
+              "label": { "type": "string" },
+              "key": { "type": "string" },
+              "type": { "enum": ["text", "number", "bar", "heat"] },
+              "width": { "type": "integer", "minimum": 4 },
+              "color": { "type": "string" },
+              "align": { "enum": ["left", "right"] },
+              "showValue": { "type": "boolean" }
+            }
+          }
+        ]
+      }
+    },
+    "rules": { "type": "boolean", "description": "Table: rule under the header." },
+    "items": { "type": "array", "items": { "type": "object", "description": "Treemap: {label, value} leaves, or {label, children} groups." } },
+    "nodes": { "type": "array", "items": { "type": "object", "required": ["id"], "properties": { "id": { "type": "string" }, "label": { "type": "string" }, "column": { "type": "integer" } } } },
+    "links": { "type": "array", "items": { "type": "object", "required": ["from", "to", "value"], "properties": { "from": { "type": "string" }, "to": { "type": "string" }, "value": { "type": "number", "exclusiveMinimum": 0 } } } },
+    "cards": { "type": "array", "items": { "type": "object", "description": "Kanban: flat cards; the column is decided by 'column', 'status' or 'list'." } },
+    "order": { "type": "array", "items": { "type": "string" }, "description": "Kanban: explicit column order." },
+    "columnWidth": { "type": "integer", "minimum": 10 },
+    "max": { "type": "number", "description": "Radar and gauge: the full-scale value, so two charts are comparable." },
+    "filled": { "type": "boolean", "description": "Radar: fill the polygon even with several series." },
+    "spokes": { "type": "boolean", "default": true, "description": "Radar and pie: draw the axis lines." },
+    "target": { "type": "number", "description": "Gauge and progress: a marker on the track." },
+    "track": { "type": "boolean", "description": "Horizontal bars: show the unfilled track." },
+    "sort": { "type": "boolean", "description": "Horizontal bars: order by value." },
+    "big": { "type": "boolean", "description": "Scatter: double the marker so single points stay visible." },
+    "note": { "type": "boolean", "default": true, "description": "Histogram: print the sample count and bin width under the chart." }
+  },
+  "examples": [
+    { "type": "pie", "title": "Pipeline", "width": 40, "slices": [["Closed won", 62], ["In flight", 28], ["At risk", 10]] },
+    { "type": "line", "title": "Revenue", "width": 56, "height": 8, "labels": ["Q1", "Q2", "Q3", "Q4"], "values": [184, 186, 183, 189], "zero": false },
+    { "type": "bar", "title": "Pipeline mix", "width": 56, "normalized": true, "labels": ["Jul", "Aug"], "series": [{ "name": "Closed", "values": [80, 20] }, { "name": "Open", "values": [20, 80] }] },
+    { "type": "table", "title": "Accounts", "width": 56, "columns": ["Account", { "label": "ARR", "type": "number" }, { "label": "Share", "type": "bar" }], "rows": [["Globex", 4200, 42], ["Initech", 3100, 31]] }
+  ]
+}

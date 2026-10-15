@@ -1,0 +1,530 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>opencode-charts: anatomy and review</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+  :root { --bg:#0e1116; --panel:#161b22; --fg:#e6edf3; --muted:#9aa0a6; --line:#30363d; --bad:#ff6b6b; --warn:#e5b83c; --ok:#57c98a; --term:#0b0d10; }
+  body.light { --bg:#f6f8fa; --panel:#ffffff; --fg:#1f2328; --muted:#57606a; --line:#d0d7de; --term:#ffffff; }
+  * { box-sizing: border-box; }
+  body { margin:0; background:var(--bg); color:var(--fg); font:15px/1.5 -apple-system,"Segoe UI",Roboto,sans-serif; }
+  header, section { max-width:1180px; margin:0 auto; padding:18px 24px; }
+  h1 { font-size:24px; margin:8px 0 4px; }
+  h2 { font-size:19px; border-bottom:1px solid var(--line); padding-bottom:6px; margin-top:30px; }
+  h3 { font-size:15px; margin:0 0 8px; }
+  p, li { max-width:80ch; }
+  .muted { color:var(--muted); }
+  .grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(360px,1fr)); gap:16px; }
+  .card { background:var(--panel); border:1px solid var(--line); border-radius:8px; padding:14px; overflow:hidden; }
+  pre.term { margin:0; padding:10px; background:var(--term); border-radius:6px; overflow-x:auto;
+    font-family:"JetBrains Mono","Cascadia Code","Iosevka Term","Noto Sans Mono","Noto Sans Symbols 2",Menlo,ui-monospace,monospace;
+    font-size:12.5px; line-height:1.0; white-space:pre; }
+  .bad { background:rgba(255,107,107,.22); box-shadow:inset 0 0 0 1px rgba(255,107,107,.7); }
+  .warn { background:rgba(229,184,60,.2); box-shadow:inset 0 0 0 1px rgba(229,184,60,.6); }
+  .tag { display:inline-block; font-size:11px; font-weight:600; padding:1px 7px; border-radius:10px; margin-right:6px; }
+  .tag.b { background:var(--bad); color:#000; } .tag.s { background:var(--warn); color:#000; } .tag.n { background:var(--ok); color:#000; }
+  ul.issues { margin:10px 0 0; padding-left:18px; } ul.issues li { margin:4px 0; }
+  .controls button { background:var(--panel); color:var(--fg); border:1px solid var(--line); border-radius:6px; padding:4px 10px; cursor:pointer; margin:0 4px 6px 0; }
+  .controls button.on { border-color:var(--ok); box-shadow:inset 0 0 0 1px var(--ok); }
+  svg { display:block; max-width:100%; height:auto; }
+  .legend span { display:inline-flex; align-items:center; margin-right:14px; font-size:13px; }
+  .legend i { width:12px; height:12px; display:inline-block; margin-right:5px; border-radius:2px; }
+  table.rank { border-collapse:collapse; width:100%; font-size:14px; }
+  table.rank td, table.rank th { border-top:1px solid var(--line); padding:6px 8px; vertical-align:top; text-align:left; }
+  code { font-family:Menlo,ui-monospace,monospace; font-size:13px; }
+  .stat { font-family:Menlo,monospace; font-size:13px; }
+  .note { border-left:3px solid var(--warn); padding:4px 10px; margin:10px 0; }
+</style>
+</head>
+<body>
+<header>
+  <h1>opencode-charts: anatomy and review</h1>
+  <p class="muted">Snapshot 2026-10-15. Renders are copied verbatim from <code>review/renders.txt</code> (58 columns, plain text). The interactive figures re-create the pie sampler from <code>pie.js</code> and <code>core.js</code> in this page; they are a copy, not your module. <code>npm test</code> and <code>npm run accuracy</code> were not run (shell blocked in the review session).</p>
+  <div class="controls"><button id="theme">Toggle light terminal</button>
+  <span class="muted">Shows how the fixed colours (<code>GAP #0b0b0b</code>, <code>HEAT_LOW #1f3b57</code>, tints toward <code>#101010</code>) look on a light theme.</span></div>
+  <p class="note">If the octant glyphs below show as boxes, your browser font lacks Unicode 16 "Symbols for Legacy Computing Supplement". A terminal with the same gap shows the same boxes, and a width check cannot detect it.</p>
+</header>
+
+<section>
+  <h2>Idea 1: aspect correction</h2>
+  <p>A cell is about twice as tall as wide. A circle in cell units is a tall ellipse. The fix: <code>radiusY = radiusX / 2</code>. Cells below are drawn 1:2.</p>
+  <div class="grid">
+    <div class="card"><h3>Uncorrected: radiusY = radiusX</h3><div id="aspect-naive"></div></div>
+    <div class="card"><h3>Corrected: radiusY = radiusX / 2</h3><div id="aspect-fixed"></div></div>
+  </div>
+  <p><span class="tag s">gap</span>Pie, donut and radar apply this rule. <b>The treemap does not.</b> <code>squarify()</code> computes aspect ratios in cell units, so the measured "1.07 to 2.0" is in cell space, not on screen. The pie also takes <code>height ≈ width / 2</code>: 30 rows at 58 columns, 41 at 80.</p>
+</section>
+
+<section>
+  <h2>Idea 2: sub-cell mosaics</h2>
+  <p>Each cell is sampled as a 2×2, 2×3 or 2×4 grid. Bits are row-major: bit 0 upper-left, bit 1 upper-right, then down. The mask selects the glyph.</p>
+  <div class="grid">
+    <div class="card"><h3>One octant cell: bit layout</h3><div id="bits"></div>
+      <p class="muted">Examples: <code>3 → 🮂 U+1FB82</code>, <code>192 → ▂</code>, <code>20 → 🯦 U+1FBE6</code>, <code>1 → 𜺨 U+1CEA8</code>. The octant block does not repeat patterns that exist in other blocks, so the table borrows from three blocks. Spot-checked from memory of the Unicode names, not fetched from the UCD.</p></div>
+    <div class="card"><h3>Coverage risk by mode</h3>
+      <table class="rank">
+        <tr><th>mode</th><th>sub-cells</th><th>Unicode</th><th>risk</th></tr>
+        <tr><td>quadrant</td><td>2×2</td><td>1.0</td><td>none</td></tr>
+        <tr><td>sextant</td><td>2×3</td><td>13.0 (2020)</td><td>low</td></tr>
+        <tr><td>octant</td><td>2×4</td><td>16.0 (2024)</td><td><b>high</b> unless the terminal draws block glyphs itself</td></tr>
+      </table>
+      <p class="muted">"Width mismatches 0" proves one column per glyph. It does not prove the glyph is drawn: a missing glyph (tofu) is also one column. Octant is still the default for every caller.</p></div>
+  </div>
+</section>
+
+<section>
+  <h2>Idea 3: two-colour boundary cells</h2>
+  <p>A boundary cell shows two series: the glyph holds the winner (foreground) and the background holds the other. A cell has only two colour slots. At the rim there are three states (outside, A, B), so one must be dropped.</p>
+  <div class="controls" id="mode-buttons">
+    <button data-mode="quadrant">quadrant</button><button data-mode="sextant">sextant</button><button data-mode="octant" class="on">octant</button><button id="donut">donut: off</button>
+  </div>
+  <div class="legend">
+    <span><i style="background:#4e9de0"></i>Closed won 62</span><span><i style="background:#57c98a"></i>In flight 28</span><span><i style="background:#e5b83c"></i>At risk 10</span>
+    <span><i style="box-shadow:inset 0 0 0 2px #ff6b6b"></i>"line" cell (boundary meets rim)</span>
+  </div>
+  <p class="stat" id="pie-stats"></p>
+  <div class="grid">
+    <div class="card"><h3>A. Sub-cell truth (what the sampler sees)</h3><div id="pie-truth"></div></div>
+    <div class="card"><h3>B. What tui.js paints today</h3><div id="pie-tui"></div></div>
+    <div class="card"><h3>C. Whole cells, no mosaic (the staircase)</h3><div id="pie-whole"></div></div>
+  </div>
+  <ul class="issues">
+    <li><span class="tag b">bug</span><code>paintCell</code> returns <code>kind:"line"</code> for a partial two-series cell, with the glyph set to the <i>loser's</i> sub-cells. <code>tui.js</code> paints "line" as <code>bg(fill)(fg(GAP))</code>, so the whole cell, including sub-cells outside the disc, gets the winner colour, and the loser's sub-cells turn near-black. That is the opposite of the pie.js comment. The same path fires where lines cross in multi-series line charts and at stacked bar and area tops.</li>
+    <li><span class="tag b">bug</span>In plain text a "line" cell shows only the loser's sub-cells, so the winner's part disappears.</li>
+    <li><span class="tag s">fix</span>For a partial two-series mask, draw <code>glyph(mask)</code> in the winner colour on the default background. Keep "line" only for the gauge target mark.</li>
+    <li><span class="tag s">bug</span>The "edge" background is <code>palette[other]</code> even when a family set an explicit <code>color</code> (sankey, candle, waterfall). Radar sets <code>other:-1</code>, so it gets a <code>#0b0b0b</code> background.</li>
+  </ul>
+</section>
+
+<section>
+  <h2>The renders, annotated</h2>
+  <p class="muted">Red = wrong now. Amber = weak.</p>
+  <div class="grid">
+
+<div class="card"><h3>bar / column</h3>
+<pre class="term">Bookings
+200┤
+   │                           168
+150┤                       150 ███ 141
+   │                   120 ███ ███ ███
+100┤                   ███ ███ ███ ███
+   │                   ███ ███ ███ ███
+ 50┤                   ███ ███ ███ ███
+   │                   ███ ███ ███ ███
+<span class="bad">  0┼───────────────────────────────────</span>
+<span class="bad">    Jul Aug Sep Oct</span></pre>
+<ul class="issues">
+<li><span class="tag b">bug</span>Bars start at column 23, labels at column 4: <code>leftPad</code> is added to the bars, but <code>categoryRow</code> gets no <code>slotOffset</code>.</li>
+<li><span class="tag b">bug</span>The zero row is a data row (0 to 22 here) and is replaced by the axis line. Any bar under one row disappears.</li>
+<li><span class="tag b">bug</span>The value label fills the bar's top cell with the bar colour, so in colour 168 is drawn as 177.8.</li>
+<li><span class="tag s">weak</span>Four thin bars centred in 54 columns look broken. Start at the axis or let bars grow wider.</li>
+</ul></div>
+
+<div class="card"><h3>histogram</h3>
+<pre class="term">Ticket size
+15┤
+  │                  ▂▂▂
+  │                  ███
+10┤                  ███
+  │                  ███
+  │                  ███
+ 5┤                  ███ ▄▄▄
+  │                  ███ ███ ▂▂▂
+<span class="bad"> 0┼──────────────────────────────────────</span>
+<span class="bad">   3      11.2      19.4     27.6</span>
+20 values, 5 bins of 8.2</pre>
+<ul class="issues">
+<li><span class="tag b">proof</span>5 bins, 3 bars. The last bin holds the maximum (closed at the top), so its count is at least 1, yet it is drawn nowhere: the zero row swallowed it.</li>
+<li><span class="tag b">bug</span>Edge labels are spread over the full width while the bars are centred. A bin label belongs on its left edge.</li>
+</ul></div>
+
+<div class="card"><h3>candle / candlestick / ohlc</h3>
+<pre class="term">ACME
+20┤
+  │
+  │                                   𜵈
+15┤                   ▖          ▗▙▖ ▗▙▖
+  │                  𜺠𜷀𜺣 𜺠𜷀𜺣  𜺣  ▐█▌ 𜺫𜵊𜺨
+  │                  ▐█▌ ▐█▌ 𜶖𜷤𜵈 ▝▛▘
+10┤                  𜺫𜵊𜺨 𜺫𜴏𜺨 𜺫𜷊𜺨  𜺨
+  │                   𜺨       ▌
+<span class="warn">  │
+ 5┤
+  │</span>
+ 0┼───────────────────────────────────────────────────────
+<span class="bad">   Mon          Tue          Wed           Thu</span>
+● up   ● down</pre>
+<ul class="issues">
+<li><span class="tag b">bug</span>Labels spread over the full width, candles in the middle.</li>
+<li><span class="tag b">bug</span>The axis always includes zero. Prices from 180 to 190 collapse into one or two rows.</li>
+<li><span class="tag s">bug</span><code>ohlc</code> is an alias and draws candles.</li>
+</ul></div>
+
+<div class="card"><h3>waterfall</h3>
+<pre class="term">ARR movement
+200┤                    +45  -30
+   │                    ▂▂▂▂─▂▂▂▂ +25  +160
+150┤                    ████ ████ ████─████
+   │               +120 ████ ▀▀▀▀─▀▀▀▀ ████
+   │               ████─🮂🮂🮂🮂           ████
+100┤               ████                ████
+   │               ████                ████
+ 50┤               ████                ████
+   │               ████                ████
+  0┼───────────────████────────────────████───────────────
+<span class="bad">    Start       New          Churn      Expansion</span>
+▲ up  ▼ down  ■ total</pre>
+<ul class="issues">
+<li><span class="tag b">bug</span>5 bars, 4 labels, all in the wrong place. "Total" was dropped when labels were thinned.</li>
+<li><span class="tag b">bug</span>Delta labels are background chips in the row above each bar, so in colour every bar looks one row taller.</li>
+</ul></div>
+
+<div class="card"><h3>line</h3>
+<pre class="term">Revenue
+30┤
+  │                                             𜺠▂▂𜷋𜴧𜴧𜴯𜴆𜴆𜴂
+  │                                     ▂▂𜵡𜴯𜴆𜴆𜴂🮂🮂
+20┤           ▂𜷋𜴧𜴧𜴧𜶻▂▂▂𜺣         𜺠▂𜷋𜴧𜴔𜴈🮂𜺨
+  │   𜺠▂𜵡𜴧𜴔𜴆𜴂🮂𜺨        🮂🮂🮂𜴅𜴆𜴆𜴆𜴆𜴆𜴂🮂
+  │𜴆𜴈🮂🮂
+<span class="warn">10┤
+  │
+ 0┤───────────────────────────────────────────────────────</span>
+   Jan          Feb          Mar           Apr</pre>
+<ul class="issues">
+<li><span class="tag s">weak</span>Forced zero: data from 13 to 30 uses 5 of 9 rows.</li>
+<li><span class="tag b">bug</span><code>stampEndLabels</code> uses the series' topmost row, not the last point's row.</li>
+<li><span class="tag s">weak</span>Point sampling drops spikes that fall between sub-columns.</li>
+</ul></div>
+
+<div class="card"><h3>scatter</h3>
+<pre class="term">Deals
+ 10┤
+   │                                                     𜺫
+7.5┤                                   𜺫𜺨
+   │
+   │                                            𜺫𜺨
+  5┤                  🮂
+   │
+2.5┤                           🮂
+   │         🮂
+  0┤──────────────────────────────────────────────────────
+<span class="warn">    1          2         3          4         5          6</span></pre>
+<ul class="issues">
+<li><span class="tag b">bug</span>X labels are spaced by index, not by value, and the x range is forced to include 0.</li>
+<li><span class="tag s">weak</span>The marker is 1 or 2 sub-cells depending on where it lands. Only one series is supported.</li>
+</ul></div>
+
+<div class="card"><h3>heatmap</h3>
+<pre class="term">Ops by hour
+<span class="bad">     9am 12pm3pm 6pm </span>
+ Mon    1   4   6   2
+ Tue    2   6   7   3
+ Wed    1   3   5   2
+ 1                   7</pre>
+<ul class="issues">
+<li><span class="tag b">bug</span>The header is left-aligned while values are right-aligned, with no separator. The default <code>cellWidth</code> of 2 cuts every label to "9…".</li>
+<li><span class="tag s">bug</span>A missing cell becomes 0 and is painted as the minimum. The ramp's low end is near-invisible on dark backgrounds.</li>
+</ul></div>
+
+<div class="card"><h3>radar</h3>
+<pre class="term">Service health
+                          Speed
+                      𜺠𜷋▄𜷡𜵭𜴳𜴳𜴳𜷞▄𜶻𜺣
+                  𜺠𜷋𜵭𜴗𜴂🮂    ▐▌ 𜺫🮂▀𜴴𜷞▂
+                𜺠𜵩𜴂𜺨  ▂𜷋𜷡𜴳𜴵𜴗▀🮅𜴳𜷞𜶻𜺣  𜴅𜴴𜶻
+              𜺠𜵩𜴂  𜺠𜵩𜴖𜴂𜺨    ▐▌  🮂▀𜶨𜶻  𜺫𜶩𜺣
+             𜷋𜴏  𜺠𜵩𜴂        ▐▌     𜺫𜶚▖  𜴢▖
+            𜷓▘  𜷋𜴏          ▐▌       𜴢▖  𜶘𜺣
+ Quality   ▗𜴍𜶻▂𜶖▘           𜴡𜴍        𜶘𜺣  𜶡▂𜷋𜷡   Cost
+           ▐🮂𜴅▗𜴍𜴴𜷞▄▂𜺣                𜺠▂▌𜷡𜴵▐▀𜴂🮂
+           ▐ 𜺠𜵊    🮂🮂𜴇𜴣𜴧𜶀𜺣      𜺠𜵑𜴧𜴔𜴈🮂🮂▝▖ 𜵊
+           ▐𜺣▐            𜺫 𜴀𜴃 𜺨        𜶘𜵫
+            𜶡▛             𜴐  𜴜        𜺠▐𜵈
+            ▝𜶩           𜷋𜴁    𜴄𜶻    𜷋𜴐𜺨▐𜴍
+             ▐𜶄        𜺠𜵩𜺨      ▗𜵎𜴆𜴈🮂   𜵫
+             𜺫𜷀𜴤𜶻     𜷋𜴗       𜷋𜴗 𜴦𜶻   𜷓▘
+              ▝𜶿𜺫𜴤▄𜺣𜺠𜷥𜴂     ▂𜷡𜴵𜴂   𜴅𜷤𜺠𜵩▘
+               ▝𜶠𜺣 🮂𜴇𜴣𜴳𜴳𜴳𜴳𜴖▀🮂𜺨     𜺠▄𜴖𜺨
+                𜺫𜴤𜶻▂            ▂▄𜵭▀𜺨 ▜𜵮
+           Reach   🮂▀𜴤𜴳𜶨▄▄▄▄▆𜵭𜴵▀𜴂𜺨       Risk
+● Now
+● Target</pre>
+<ul class="issues">
+<li><span class="tag b">bug</span><code>ringAt</code> interpolates the radius linearly in angle, so the sides bow outward (+24% mid-side with 5 axes).</li>
+<li><span class="tag b">bug</span><code>Math.abs</code> turns −5 into 5. The spokes fall through to the default foreground in tui.js.</li>
+</ul></div>
+
+<div class="card"><h3>treemap</h3>
+<pre class="term">Spend by team
+╭───────────────╮╭────────────╮╭─────────╮╭─────────╮╭───╮
+│API            ││ETL         ││Web      ││SRE      ││Su…│
+<span class="bad">│19             ││15          ││12       ││12       ││6  │</span>
+│               ││            ││         ││            ││   │
+│               ││            ││         ││            ││   │
+│               ││            ││         ││            ││   │
+│               ││            ││         ││            ││   │
+│               ││            ││         ││            ││   │
+│               ││            ││         ││            ││   │
+│               ││            ││         ││            ││   │
+│               ││            ││         ││            ││   │
+<span class="warn">╰───────────────╯╰────────────╯╰─────────╯╰─────────╯╰───╯</span>
+● Platform
+● Ops</pre>
+<ul class="issues">
+<li><span class="tag b">bug</span>The value line is <code>kind:"legend"</code>. tui.js paints it with no background, so it leaves a hole in the tinted tile.</li>
+<li><span class="tag s">weak</span>Double borders on every seam. The layout is not aspect-corrected.</li>
+</ul></div>
+
+<div class="card"><h3>sankey</h3>
+<pre class="term">Signup flow
+
+          ▂▂▄▄▆▆█ ▆▄
+         ████████ ███▆▂
+         █Search█ ██████▄▂
+         ████████ ████████
+         ███🮅▀▀🮂  🮂▀██████
+         ▆▆▆▆████ ▆▄▂🮂🮅███
+Sources  █Social█ ██Trial█
+         ████████ ████████
+         ▆🮂🮂🮂▂▂▂   🮂🮂▀🮅🮅██
+         ████████       ▂▆
+         🮅🮅🮅Paid█    ▂▄█▀🮂
+         ██▆▆▄▄▂  ▂▄█🮅🮂
+          🮂Email█ 🮅▀</pre>
+<ul class="issues">
+<li><span class="tag b">bug</span>Uses about 27 of 58 columns: <code>gap</code> is capped at the widest label plus 1.</li>
+<li><span class="tag b">bug</span>Outgoing bands are scaled to the out-total, not the flow, so funnel drop-off is hidden.</li>
+<li><span class="tag b">bug</span>Labels are stamped over the incoming bands. Cycles push nodes off the grid.</li>
+</ul></div>
+
+<div class="card"><h3>pie</h3>
+<pre class="term">Closed won
+
+                   𜺠𜷋▄𜷡▆▆𜷥██████𜷤▆𜷞▄𜶻𜺣
+               ▂▄▆██████████████████████▆▄▂
+            𜴘𜷡█████10%██████████████████████𜷞𜶻
+         𜺠▄𜷥█𜷞𜶫███████████████████████████████𜷤▄𜺣
+        𜷡█████𜷤▜█████████████████████████████████𜷞
+      𜷋𜷥████████𜷞█████████████████████████████████𜷤𜶻
+     𜷡███████████𜷤▜█████████████████████████████████𜷞
+    ▟██████████████𜶿█████████████████████████████████▙
+   ▟████████████████𜷤𜶫████████████████████████████████▙
+  𜷓███████████████████𜶿████████████████████████████████𜶿
+ 𜺠█████████████████████▙𜶫███████████████████████████████𜺣
+ ▐███████████████████████𜴦██████████████████████████████▌
+ 𜷥████████████████████████▙𜶫████████████████████████████𜷤
+ ████████████28%███████████𜷤𜴦████████████████████████████
+ ██████████████████████████𜵰𜷡████████████████████████████
+ 𜶫███████████████████████𜵰𜷡█████████████████████████████𜵰
+ ▐█████████████████████𜵰𜷡███████████████████████████████▌
+ 𜺫███████████████████𜵰𜷡█████████████████████████████████𜺨
+  𜴢█████████████████𜴗𜷥█████████████████████████████████𜴏
+   ▜██████████████𜴗𜷥██████████████████████████████████▛
+    ▜███████████𜴗𜷥███████████████████████████████████▛
+     𜴦████████𜴗𜷥████████████████████████████████████𜴗
+      𜴅𜶫████𜵰▟█████████████████62%████████████████𜵰𜴂
+        𜴦█𜵰𜷡█████████████████████████████████████𜴗
+         𜺫▀𜶫██████████████████████████████████𜵰▀𜺨
+            𜴅𜴦██████████████████████████████𜴗𜴂
+               🮂▀🮅██████████████████████🮅▀🮂
+                   𜺫𜴅▀𜴦🮅🮅𜶫██████𜵰🮅🮅𜴗▀𜴂𜺨
+
+● Closed won                                    62  62.0%
+● In flight                                     28  28.0%
+● At risk                                       10  10.0%</pre>
+<ul class="issues">
+<li><span class="tag s">weak</span>30 rows for three numbers. Cap the height and derive the width from it.</li>
+<li><span class="tag s">weak</span>The legend prints raw <code>String(value)</code>. Negative slices are dropped silently.</li>
+</ul></div>
+
+<div class="card"><h3>hbar, gauge, progress, sparkline, table, kanban</h3>
+<pre class="term">Accounts
+ Globex    ██████████████████████████████████ 4.2k   37.9%
+ Initech   █████████████████████████▏         3.1k   28.0%
+ Umbrella  ███████████████████████▌           2.9k   26.2%
+ Soylent   ███████▏                            880    7.9%
+
+Coverage
+ Coverage █████████████████████████▍░░░░░░░░░░░░░░░ 62.0%
+Sprint
+ Done ██████████████████░░░░░░░░░░░░░░░░░░░░░░░░░░░ 40.0%
+Pulse
+▁▃▂▄▃▆▅▇▆█ 12
+
+Accounts
+Account     ARR  Share     Trend
+────────  ─────  ────────  ─────
+Globex    4,200  █████ 42      3
+Initech   3,100  ███▊  31      7
+Umbrella  2,900  ███▌  29      5
+Soylent     880  █▎     9      2
+
+Sprint
+Todo (1)           Doing (2)          Done (2)
+────────────────── ────────────────── ──────────────────
+╭────────────────╮ ╭────────────────╮ ╭────────────────╮
+│Ship the sankey │ │Radar labels    │ │Waterfall       │
+│@ana            │ │@rui            │ │@ana            │
+╰────────────────╯ ╰────────────────╯ ╰────────────────╯
+
+                   ╭────────────────╮ ╭────────────────╮
+                   │Treemap tint    │ │Table           │
+                   ╰────────────────╯ ╰────────────────╯</pre>
+<ul class="issues">
+<li><span class="tag n">good</span>hbar, gauge, progress, sparkline and table are the strongest families.</li>
+<li><span class="tag b">bug</span>hbar <code>"percent": true</code> silently becomes a 100% stacked chart with every bar full.</li>
+<li><span class="tag s">bug</span><code>cols()</code> counts code points, not display columns, so CJK or emoji misaligns tables, kanban and legends. Kanban with 6 or more columns is clipped silently. Sparkline ignores <code>width</code>.</li>
+</ul></div>
+
+  </div>
+</section>
+
+<section>
+  <h2>Run kinds: emitted vs mapped in tui.js</h2>
+  <table class="rank">
+    <tr><th>kind</th><th>emitted by</th><th>tui.js does</th><th>problem</th></tr>
+    <tr><td>fill</td><td>all</td><td>fg(colour)</td><td>none</td></tr>
+    <tr><td>edge</td><td>pie, bar, line, sankey, radar</td><td>fg on bg(palette[other] or GAP)</td><td>ignores explicit colours; radar gets a GAP background</td></tr>
+    <tr><td>line</td><td>pie rim, line, stacked tops, gauge target</td><td>bg(colour), fg(GAP)</td><td>two meanings; correct only for the gauge</td></tr>
+    <tr><td>label</td><td>pie, bar, waterfall, heatmap, table, treemap, sankey</td><td>bg(colour) with contrast fg</td><td>bar and waterfall chips inflate bar height</td></tr>
+    <tr><td>legend</td><td>many, plus the treemap value line</td><td>fg(MUTED)</td><td>ignores run.color, so the treemap tile gets a hole</td></tr>
+    <tr><td>spoke</td><td>pie (spokes), radar</td><td>fg only when slice ≥ 0</td><td>radar spokes use the default fg</td></tr>
+    <tr><td>series, grid</td><td>nobody</td><td>mapped</td><td>dead code</td></tr>
+  </table>
+  <p class="muted">tui.js has no tests.</p>
+</section>
+
+<section>
+  <h2>Why the tests stayed green</h2>
+  <p>The suites check properties of the output. None checks that a label sits under its bar, that a drawn height matches its value, that a small value is visible, or what colour a run kind gets. None of the 137 checks (your count; I read the suites but did not run them) covers the red marks above. Add one test per slot family (the bar's x-centre equals its label's x-centre; drawn sub-rows equal value / sub-row unit ± 1), a golden snapshot of <code>renders.txt</code>, and tests for <code>chunkFor</code>.</p>
+</section>
+
+<script>
+(function () {
+  const PALETTE = ["#4e9de0", "#57c98a", "#e5b83c", "#e5695f", "#a98bd8"];
+  const GAP = "#0b0b0b";
+  const MODES = { quadrant: [2, 2], sextant: [2, 3], octant: [2, 4] };
+  const CW = 10, CH = 20;
+  let mode = "octant", donut = false;
+  const termBg = () => (document.body.classList.contains("light") ? "#ffffff" : "#0b0d10");
+  const svg = (w, h, body) => `<svg viewBox="0 0 ${w} ${h}" width="${w}" height="${h}" xmlns="http://www.w3.org/2000/svg">${body}</svg>`;
+
+  function aspect(id, corrected) {
+    const W = 26, rx = 11, ry = corrected ? rx / 2 : rx, H = Math.ceil(2 * ry) + 2, cx = (W - 1) / 2, cy = (H - 1) / 2;
+    let out = `<rect width="${W * CW}" height="${H * CH}" fill="${termBg()}"/>`;
+    for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+      const inside = Math.hypot((x - cx) / rx, (y - cy) / ry) <= 1;
+      out += `<rect x="${x * CW}" y="${y * CH}" width="${CW}" height="${CH}" fill="${inside ? "#4e9de0" : "none"}" stroke="#30363d" stroke-width="0.5"/>`;
+    }
+    document.getElementById(id).innerHTML = svg(W * CW, H * CH, out);
+  }
+
+  function bits() {
+    const s = 34, w = 2 * s, h = 4 * s;
+    let out = "";
+    for (let r = 0; r < 4; r++) for (let c = 0; c < 2; c++) {
+      const bit = r * 2 + c, on = [0, 1, 2, 4].includes(bit);
+      out += `<rect x="${c * s}" y="${r * s}" width="${s}" height="${s}" fill="${on ? "#4e9de0" : "#1b2230"}" stroke="#9aa0a6"/>`;
+      out += `<text x="${c * s + s / 2}" y="${r * s + s / 2 + 5}" text-anchor="middle" font-size="14" fill="#fff">${bit}</text>`;
+    }
+    out += `<text x="${w + 14}" y="30" font-size="13" fill="currentColor">bits 0,1,2,4 set</text>`;
+    out += `<text x="${w + 14}" y="50" font-size="13" fill="currentColor">mask = 1+2+4+16 = 23</text>`;
+    out += `<text x="${w + 14}" y="70" font-size="13" fill="currentColor">OCTANT[23] = U+1CD0F</text>`;
+    out += `<text x="${w + 14}" y="100" font-size="12" fill="#9aa0a6">sample point of bit (c, r):</text>`;
+    out += `<text x="${w + 14}" y="118" font-size="12" fill="#9aa0a6">x + (c + 0.5 - 1) / 2, y + (r + 0.5 - 2) / 4</text>`;
+    document.getElementById("bits").innerHTML = svg(w + 330, h + 2, out);
+  }
+
+  function model(W, values) {
+    const rx = (W - 2) / 2, ry = rx / 2, H = Math.round(rx) + 2;
+    const total = values.reduce((a, b) => a + b, 0);
+    let run = 0;
+    const bounds = values.map((v) => (run += v / total));
+    const cx = (W - 1) / 2, cy = (H - 1) / 2, inner = donut ? 0.45 : 0;
+    const at = (x, y) => {
+      const dx = (x - cx) / rx, dy = (y - cy) / ry, d = Math.hypot(dx, dy);
+      if (d > 1 || (inner > 0 && d < inner)) return -1;
+      let a = Math.atan2(dx, -dy);
+      if (a < 0) a += 2 * Math.PI;
+      const i = bounds.findIndex((b) => a / (2 * Math.PI) < b);
+      return i < 0 ? values.length - 1 : i;
+    };
+    return { W, H, at, rx, ry };
+  }
+
+  function sampleCell(m, x, y) {
+    const [C, R] = MODES[mode], subs = [];
+    for (let r = 0; r < R; r++) for (let c = 0; c < C; c++) subs.push(m.at(x + (c + 0.5 - C / 2) / C, y + (r + 0.5 - R / 2) / R));
+    return subs;
+  }
+
+  function classify(subs) {
+    const minimum = mode === "quadrant" ? 2 : 1, tally = new Map();
+    let inside = 0;
+    subs.forEach((v) => { if (v >= 0) { inside++; tally.set(v, (tally.get(v) || 0) + 1); } });
+    if (inside < minimum) return { kind: "outside" };
+    const sorted = [...tally.entries()].sort((a, b) => a[0] - b[0]);
+    let winner = -1, best = -1, other = -1, second = -1;
+    sorted.forEach(([i, n]) => { if (n > best) { best = n; winner = i; } });
+    sorted.forEach(([i, n]) => { if (i !== winner && n > second) { second = n; other = i; } });
+    if (tally.size === 1) return { kind: "fill", winner };
+    return { kind: inside === subs.length ? "edge" : "line", winner, other };
+  }
+
+  function drawPies() {
+    const m = model(40, [62, 28, 10]), [C, R] = MODES[mode], sw = CW / C, sh = CH / R;
+    let base = `<rect width="${m.W * CW}" height="${m.H * CH}" fill="${termBg()}"/>`;
+    let truth = base, tui = base, whole = base;
+    const counts = { fill: 0, edge: 0, line: 0 };
+    let drawnSub = 0;
+    const sub = (x, y, k, colour) => `<rect x="${x * CW + (k % C) * sw}" y="${y * CH + Math.floor(k / C) * sh}" width="${sw}" height="${sh}" fill="${colour}"/>`;
+    for (let y = 0; y < m.H; y++) for (let x = 0; x < m.W; x++) {
+      const subs = sampleCell(m, x, y);
+      subs.forEach((v, k) => { if (v >= 0) truth += sub(x, y, k, PALETTE[v]); });
+      const cell = classify(subs);
+      if (cell.kind === "outside") continue;
+      counts[cell.kind]++;
+      subs.forEach((v) => { if (v >= 0) drawnSub++; });
+      if (subs.filter((v) => v >= 0).length * 2 >= subs.length) whole += `<rect x="${x * CW}" y="${y * CH}" width="${CW}" height="${CH}" fill="${PALETTE[cell.winner]}"/>`;
+      if (cell.kind === "line") {
+        tui += `<rect x="${x * CW}" y="${y * CH}" width="${CW}" height="${CH}" fill="${PALETTE[cell.winner]}"/>`;
+        subs.forEach((v, k) => { if (v >= 0 && v !== cell.winner) tui += sub(x, y, k, GAP); });
+        tui += `<rect x="${x * CW + 0.5}" y="${y * CH + 0.5}" width="${CW - 1}" height="${CH - 1}" fill="none" stroke="#ff6b6b" stroke-width="1.5"/>`;
+        continue;
+      }
+      if (cell.kind === "edge") tui += `<rect x="${x * CW}" y="${y * CH}" width="${CW}" height="${CH}" fill="${PALETTE[cell.other]}"/>`;
+      subs.forEach((v, k) => { if (v === cell.winner) tui += sub(x, y, k, PALETTE[v]); });
+    }
+    const area = Math.PI * m.rx * m.ry, drawn = drawnSub / (C * R);
+    document.getElementById("pie-stats").textContent =
+      `${mode}${donut ? " donut" : ""}: fill ${counts.fill}, edge ${counts.edge}, line ${counts.line} cells. ` +
+      (donut ? "" : `Drawn area ${drawn.toFixed(1)} vs ellipse ${area.toFixed(1)} cells (${(((drawn - area) / area) * 100).toFixed(1)}%). `) +
+      "Every red-outlined cell paints outside the rim in colour.";
+    document.getElementById("pie-truth").innerHTML = svg(m.W * CW, m.H * CH, truth);
+    document.getElementById("pie-tui").innerHTML = svg(m.W * CW, m.H * CH, tui);
+    document.getElementById("pie-whole").innerHTML = svg(m.W * CW, m.H * CH, whole);
+  }
+
+  function redrawAll() { aspect("aspect-naive", false); aspect("aspect-fixed", true); drawPies(); }
+  document.getElementById("theme").onclick = () => { document.body.classList.toggle("light"); redrawAll(); };
+  document.querySelectorAll("#mode-buttons button[data-mode]").forEach((button) => {
+    button.onclick = () => {
+      mode = button.dataset.mode;
+      document.querySelectorAll("#mode-buttons button[data-mode]").forEach((b) => b.classList.toggle("on", b === button));
+      drawPies();
+    };
+  });
+  document.getElementById("donut").onclick = (event) => {
+    donut = !donut;
+    event.target.textContent = `donut: ${donut ? "on" : "off"}`;
+    event.target.classList.toggle("on", donut);
+    drawPies();
+  };
+  bits();
+  redrawAll();
+})();
+</script>
+</body>
+</html>
