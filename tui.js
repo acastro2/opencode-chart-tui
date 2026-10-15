@@ -139,5 +139,6 @@ export default {
         debug(`could not register "${language}": ${error?.message}`);
       }
     }
+    debug(`cell aspect option: ${cellAspectOption(context) ?? "default 2"}`);
   },
 };
