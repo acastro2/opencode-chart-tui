@@ -6,16 +6,165 @@ You type a ```chart fence with a JSON body; the plugin draws it in place — pie
 
 Nothing is rendered as an image: every family paints a grid of cells, so the geometry is testable without a terminal and the picture fits any pane.
 
-![Pie](assets/pie.svg)
+## Gallery
+
+Every picture is that family's own output, drawn from the library itself rather than
+made by hand: `node scripts/images.mjs` renders each sample and turns the mosaic and
+block glyphs into rectangles, so the shapes are exact and cannot drift from the code.
+
+GitHub does not know the `chart` language, so the fence bodies below show as plain
+text here. Paste one into OpenCode and it renders.
 
 | | |
 |---|---|
-| ![Donut](assets/donut.svg) | ![Radar](assets/radar.svg) |
-| ![Treemap](assets/treemap.svg) | ![Sankey](assets/sankey.svg) |
-| ![Waterfall](assets/waterfall.svg) | ![Kanban](assets/kanban.svg) |
-| ![Heatmap](assets/heatmap.svg) | ![Table](assets/table.svg) |
+| ![pie](assets/pie.svg) | ![donut](assets/donut.svg) |
+| ![bar](assets/bar.svg) | ![column](assets/column.svg) |
+| ![hbar](assets/hbar.svg) | ![line](assets/line.svg) |
+| ![area](assets/area.svg) | ![sparkline](assets/sparkline.svg) |
+| ![histogram](assets/histogram.svg) | ![candlestick](assets/candlestick.svg) |
+| ![ohlc](assets/ohlc.svg) | ![scatter](assets/scatter.svg) |
+| ![heatmap](assets/heatmap.svg) | ![gauge](assets/gauge.svg) |
+| ![progress](assets/progress.svg) | ![waterfall](assets/waterfall.svg) |
+| ![table](assets/table.svg) | ![radar](assets/radar.svg) |
+| ![treemap](assets/treemap.svg) | ![sankey](assets/sankey.svg) |
+| ![kanban](assets/kanban.svg) | ![candle](assets/candle.svg) |
 
-The rest: `bar` `column` `hbar` `histogram` `candle` `candlestick` `ohlc` `line` `area` `sparkline` `scatter` `gauge` `progress` — every one of them is in [`assets/`](assets) as an SVG rendered from the library's own output, and in [`review/renders.txt`](review/renders.txt) as plain text.
+<details>
+<summary><b>Every fence, ready to paste</b></summary>
+
+**`pie`**
+
+```chart
+{"type":"pie","title":"Closed won","labels":["Closed won","In flight","At risk"],"values":[62,28,10]}
+```
+
+**`donut`**
+
+```chart
+{"type":"donut","title":"Spend","labels":["Cloud","Salaries","Tools"],"values":[44,38,18],"donut":true}
+```
+
+**`bar`**
+
+```chart
+{"type":"bar","title":"Bookings","labels":["Jul","Aug","Sep","Oct"],"values":[120,150,168,141],"height":9}
+```
+
+**`column`**
+
+```chart
+{"type":"column","title":"Bookings","labels":["Jul","Aug","Sep","Oct"],"values":[120,150,168,141],"height":9}
+```
+
+**`hbar`**
+
+```chart
+{"type":"hbar","title":"Accounts","labels":["Globex","Initech","Umbrella","Soylent"],"values":[4200,3100,2900,880]}
+```
+
+**`line`**
+
+```chart
+{"type":"line","title":"Revenue","labels":["Jan","Feb","Mar","Apr","May"],"series":[{"name":"Revenue","values":[12,18,15,22,26]}],"height":9}
+```
+
+**`area`**
+
+```chart
+{"type":"area","title":"Revenue","labels":["Jan","Feb","Mar","Apr","May"],"series":[{"name":"Revenue","values":[12,18,15,22,26]}],"height":9}
+```
+
+**`sparkline`**
+
+```chart
+{"type":"sparkline","title":"Pulse","values":[3,5,4,7,6,9,8,11,10,12]}
+```
+
+**`histogram`**
+
+```chart
+{"type":"histogram","title":"Ticket size","values":[3,5,5,6,7,7,8,8,9,9,10,11,12,13,15,18,22,26,31,44],"height":9}
+```
+
+**`candlestick`**
+
+```chart
+{"type":"candlestick","title":"ACME","labels":["Mon","Tue","Wed","Thu","Fri"],"values":[[10,14,8,12],[12,13,9,10],[10,12,7,11],[11,15,10,14],[14,16,12,13]],"height":12}
+```
+
+**`ohlc`**
+
+```chart
+{"type":"ohlc","title":"ACME","labels":["Mon","Tue","Wed"],"values":[[10,14,8,12],[12,13,9,10],[10,12,7,11]],"height":10}
+```
+
+**`scatter`**
+
+```chart
+{"type":"scatter","title":"Deals","points":[[1,2],[2,5],[3,3],[4,8],[5,6],[6,9]],"height":10}
+```
+
+**`heatmap`**
+
+```chart
+{"type":"heatmap","title":"Ops by hour","columns":["9am","12pm","3pm","6pm"],"rows":[{"label":"Mon","values":[1,4,6,2]},{"label":"Tue","values":[2,6,7,3]},{"label":"Wed","values":[1,3,5,2]}],"cellWidth":4}
+```
+
+**`gauge`**
+
+```chart
+{"type":"gauge","title":"Coverage","label":"Coverage","value":62,"max":100}
+```
+
+**`progress`**
+
+```chart
+{"type":"progress","title":"Sprint","label":"Done","value":0.4,"max":1}
+```
+
+**`waterfall`**
+
+```chart
+{"type":"waterfall","title":"ARR movement","labels":["Start","New","Churn","Expansion"],"values":[120,45,-30,25],"height":10}
+```
+
+**`table`**
+
+```chart
+{"type":"table","title":"Accounts","columns":[{"label":"Account"},{"label":"ARR","type":"number"},{"label":"Share","type":"bar"},{"label":"Trend","type":"heat"}],"rows":[["Globex",4200,42,3],["Initech",3100,31,7],["Umbrella",2900,29,5],["Soylent",880,9,2]]}
+```
+
+**`radar`**
+
+```chart
+{"type":"radar","title":"Service health","labels":["Speed","Cost","Risk","Reach","Quality"],"series":[{"name":"Now","values":[4,3,4,5,4]},{"name":"Target","values":[5,4,2,4,5]}],"height":20}
+```
+
+**`treemap`**
+
+```chart
+{"type":"treemap","title":"Spend by team","height":12,"items":[{"label":"Platform","children":[{"label":"API","value":19},{"label":"ETL","value":15},{"label":"Web","value":12}]},{"label":"Ops","children":[{"label":"SRE","value":12},{"label":"Support","value":6}]}]}
+```
+
+**`sankey`**
+
+```chart
+{"type":"sankey","title":"Signup flow","height":14,"nodes":[{"id":"sources","label":"Sources"},{"id":"search","label":"Search"},{"id":"social","label":"Social"},{"id":"email","label":"Email"},{"id":"trial","label":"Trial"},{"id":"paid","label":"Paid"}],"links":[{"from":"sources","to":"search","value":14},{"from":"sources","to":"social","value":10},{"from":"sources","to":"email","value":4},{"from":"sources","to":"paid","value":8},{"from":"search","to":"trial","value":14},{"from":"social","to":"trial","value":7},{"from":"email","to":"trial","value":3}]}
+```
+
+**`kanban`**
+
+```chart
+{"type":"kanban","title":"Sprint","height":12,"columns":[{"title":"Todo","cards":[{"title":"Ship the sankey","meta":"@ana"}]},{"title":"Doing","cards":[{"title":"Radar labels","meta":"@rui"},{"title":"Treemap tint"}]},{"title":"Done","cards":[{"title":"Waterfall","meta":"@ana"},{"title":"Table"}]}]}
+```
+
+**`candle`**
+
+```chart
+{"type":"candle","title":"ACME","labels":["Mon","Tue","Wed","Thu","Fri"],"candles":[{"open":10,"high":14,"low":8,"close":12},{"open":12,"high":13,"low":9,"close":10},{"open":10,"high":12,"low":7,"close":11},{"open":11,"high":15,"low":10,"close":14},{"open":14,"high":16,"low":12,"close":13}],"height":12}
+```
+
+</details>
 
 ## Install
 

@@ -7,7 +7,7 @@ description: Draw a chart in the OpenCode terminal with a ```chart fenced block 
 
 A chart is a fenced block whose language is `chart` and whose body is a JSON object. The OpenCode TUI replaces the fence with the drawing. A body that cannot be read shows the reason and the fence itself, so nothing fails silently.
 
-This skill ships with [opencode-chart-tui](https://github.com/acastro2/opencode-chart-tui): the plugin draws the charts, `src/` holds the renderer, `schema/chart.schema.json` describes every key, and `review/renders.txt` has every family as plain text.
+This skill ships with [opencode-chart-tui](https://github.com/acastro2/opencode-chart-tui): the plugin draws the charts, `src/` holds the renderer, `schema/chart.schema.json` describes every key, and `review/renders.txt` has every family as plain text. The repo's README gallery shows each family as a picture next to the fence that drew it.
 
 ## Rules
 
