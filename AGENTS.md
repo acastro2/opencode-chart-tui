@@ -153,6 +153,13 @@ live loop use a discovery symlink under `~/.config/opencode/plugins/` instead:
 `src/*.js` edits appear at the next render; a change to `tui.js` needs the TUI
 restarted.
 
+**Releases.** Tag a pushed commit (`git tag -a vX.Y.Z -m "…"` then
+`git push origin vX.Y.Z`) and `gh release create vX.Y.Z`. Installers pin with
+`#vX.Y.Z`; git installs display the resolved ref in the plugin list — the tag for
+a pinned spec, the branch's commit sha while tracking `main`. Pushing needs the
+personal account: `gh auth switch -u acastro2` before, back to
+`AlexandreCastro_attain` after, or GitHub returns a 403 naming the work account.
+
 ## 5. Verification discipline (what "done" means here)
 
 - `npm test` green, and the new behaviour covered by a check that fails without
