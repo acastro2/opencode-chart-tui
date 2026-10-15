@@ -346,4 +346,44 @@ check("the styled runs render the same text as the plain rows", () => {
   });
 });
 
+check("no cell paints a dark boundary colour inside the disc", () => {
+  // The boundary is two-colour at the sub-cell level everywhere; the rim cells
+  // absorb the neighbour instead of drawing a "line" cell, so no black tick can
+  // land on the shape at a junction.
+  const slices = normalizeSlices([["a", 60], ["b", 25], ["c", 15]]);
+  for (const mode of availableModes()) {
+    const { cells } = layoutPie(slices, { width: WIDTH, height: HEIGHT, mosaic: mode });
+    for (const row of cells) {
+      for (const cell of row) {
+        assert.notEqual(cell.kind, "line", `${mode}: a dark boundary cell at the rim`);
+      }
+    }
+  }
+});
+
+check("a taller cell flattens the disc", () => {
+  // The whole shape hangs on the cell's height-over-width ratio: at 2 the disc
+  // is two cells wide per cell tall; at 2.4 it is 2.4.
+  const slices = normalizeSlices([["a", 60], ["b", 40]]);
+  for (const aspect of [2, 2.4]) {
+    const { cells } = layoutPie(slices, { width: 60, mosaic: "octant", cellAspect: aspect });
+    let top = Infinity;
+    let bottom = -1;
+    let left = Infinity;
+    let right = -1;
+    cells.forEach((row, y) =>
+      row.forEach((cell, x) => {
+        if (cell.mask === 0) return;
+        top = Math.min(top, y);
+        bottom = Math.max(bottom, y);
+        left = Math.min(left, x);
+        right = Math.max(right, x);
+      }),
+    );
+    const drawnW = right - left + 1;
+    const drawnH = bottom - top + 1;
+    assert.ok(Math.abs(drawnH * aspect - drawnW) <= 2, `aspect ${aspect}: ${drawnW} wide, ${drawnH} tall`);
+  }
+});
+
 console.log(`\n${checks}/${checks} checks passed`);

@@ -252,7 +252,7 @@ Press nothing, run nothing: the fence is replaced by the drawing as soon as it i
 | `kanban` | `columns: [{title, cards}]` or a flat `cards` list | `columnWidth`, `order` |
 | `gantt` | `tasks: [{label, start, end, group, milestone}]` | `start`/`end` take numbers or ISO dates, `at` is a milestone, `today` draws the line |
 
-Shared keys: `title`, `width`, `height`, `theme` (`dark` | `light`), `palette`, `legend`, `mosaic` (`sextant` default, `octant` for Unicode 16 fonts, `quadrant` for the widest support), `textured`, `boundaryColor`.
+Shared keys: `title`, `width`, `height`, `theme` (`dark` | `light`), `palette`, `legend`, `mosaic` (`octant` default, `sextant` and `quadrant` for narrower font coverage), `cellAspect` (a cell's height over width, for the round families; `2` by default), `textured`, `boundaryColor`.
 
 The full contract, with a description of every key, is [`schema/chart.schema.json`](schema/chart.schema.json).
 
@@ -261,7 +261,7 @@ The full contract, with a description of every key, is [`schema/chart.schema.jso
 Three ideas do the work.
 
 1. **Cells are not square.** A terminal cell is about twice as tall as it is wide, so a circle is drawn on an ellipse in cell coordinates (vertical radius = half the horizontal) and every shape is corrected the same way. Without it a pie is a tall oval.
-2. **A cell is a mosaic.** Each cell is sampled as a 2×2, 2×3 or 2×4 grid of sub-cells and the resulting mask picks a Unicode mosaic glyph (`▖▝🬭𜴏`), so rims and band edges follow the curve instead of stair-stepping. Three character sets are supported: quadrant (Unicode 1.0, everywhere), sextant (Unicode 13, the default) and octant (Unicode 16, the sharpest).
+2. **A cell is a mosaic.** Each cell is sampled as a 2×2, 2×3 or 2×4 grid of sub-cells and the resulting mask picks a Unicode mosaic glyph (`▖▝🬭𜴏`), so rims and band edges follow the curve instead of stair-stepping. Three character sets are supported: quadrant (Unicode 1.0, everywhere), sextant (Unicode 13) and octant (Unicode 16, the default and the sharpest).
 3. **A boundary cell carries both series.** Where a boundary crosses a cell, the glyph holds the winning series' sub-cells and the cell's background holds the other, so the boundary costs no extra cell and lands on the sub-cell curve. The same trick draws a spoke over a filled radar.
 
 Every family renders from a grid of cells, with plain text and styled runs as two renderings of the same layout — which is why there are tests for geometry and none for colour matching.
@@ -317,7 +317,8 @@ It carries the fence contract, one example per family, the option names and the 
 
 - Interactive charts are out of scope: a fence is a picture, not a widget.
 - The `mermaid` language belongs to OpenCode's built-in renderer, and a plugin cannot extend it (the markdown registry is exclusive). Mermaid's gantt is covered here as its own family; the ones this library still does not cover — gitgraph, timeline, mindmap, quadrant, requirements, C4, packet, block, architecture and the rest — would need an upstream change, not a plugin.
-- Octant glyphs need Unicode 16 (2024) in your terminal font. The default is sextant; `"mosaic": "octant"` opts in.
+- Octant glyphs need Unicode 16 (2024) in your terminal font; that is the default. `"mosaic": "sextant"` or `"quadrant"` trade sharpness for older fonts.
+- A disc that reads taller than wide means the cell's own ratio is not 2: add `"cellAspect": 2.3` (or your terminal's ratio) to flatten it.
 
 ## License
 

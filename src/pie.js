@@ -2,20 +2,21 @@
 //
 // Three things make this hard in a terminal.
 //
-// 1. A cell is about twice as tall as it is wide, so a circle drawn in cell
-//    coordinates comes out as a tall ellipse. Every radius here is normalised
-//    by half the width horizontally and half the height vertically, which is
-//    what makes the rim round on screen.
+// 1. A cell is taller than it is wide, so a circle drawn in cell coordinates
+//    comes out as a tall ellipse. Every radius here is normalised by the cell's
+//    own ratio (`cellAspect`, height over width, two by default), which is what
+//    makes the rim round on screen.
 // 2. A whole cell per step leaves a chewed rim. The shared sampler draws each
 //    cell from its sub-cell grid (see core.js and mosaic.js), so the rim follows
 //    the curve at 2x3 or 2x4 resolution.
 // 3. A wedge boundary has to be sharp without spending cells on it. Blanking or
-//    painting whole cells for the line is what makes a staircase. Instead a cell
-//    the boundary crosses carries both wedges at once: the glyph fills the
-//    winning wedge's sub-cells and the cell background shows the other wedge
-//    behind them. The boundary then sits on the sub-cell curve, at exactly the
-//    resolution of the rim, so the inside of the chart is as sharp as the
-//    outside. Monochrome callers can ask for drawn spokes instead.
+//    painting whole cells for the line is what makes a staircase. Instead, a
+//    cell that the boundary crosses carries both wedges at once: the glyph fills
+//    the winning wedge's sub-cells and the cell background shows the other wedge
+//    behind them. Where the boundary meets the rim the winner fills the whole
+//    cell instead: a background colour there would paint the sub-cells outside
+//    the disc, and a dark line leaves ticks on the shape. Monochrome callers can
+//    ask for drawn spokes instead.
 // 4. Wedges need to be told apart. In colour that is the fill colour, so the
 //    fill is uniform everywhere. Without colour the caller can pass textured
 //    fills, and each wedge carries its own percentage either way.
@@ -61,12 +62,12 @@ export {
  *
  * @returns {{width: number, height: number, cells: {slice: number, other?: number, char: string, kind: string, mask: number}[][]}}
  *   `slice` is -1 outside the disc and `mask` is the sub-cells that fall inside
- *   it (0 outside). `kind` is "fill", "edge", "line", "label", "spoke" or
- *   "outside". An "edge" cell is crossed by a wedge boundary and holds both
- *   wedges: `char` fills `slice`'s sub-cells, and `other` names the wedge whose
- *   sub-cells are the rest of the cell, to be drawn as its background. A "line"
- *   cell is the same boundary where it meets the rim, where a background would
- *   spill outside the disc, so `char` draws the boundary's own sub-cells.
+ *   it (0 outside). `kind` is "fill", "edge", "label", "spoke" or "outside".
+ *   An "edge" cell is crossed by a wedge boundary and holds both wedges: `char`
+ *   fills `slice`'s sub-cells, and `other` names the wedge whose sub-cells are
+ *   the rest of the cell, to be drawn as its background. Boundary cells that
+ *   touch the rim are "fill": the winner paints every owned sub-cell, so no
+ *   background spills outside the disc and no dark tick lands on the shape.
  */
 export function layoutPie(slices, options = {}) {
   const width = Math.max(5, Math.floor(options.width ?? 48));
@@ -75,11 +76,12 @@ export function layoutPie(slices, options = {}) {
   // A round shape has a height of its own: without this cap a very wide frame
   // (the terminal is 140 columns, the fence says nothing) would ask for a 70-row
   // disc. The disc keeps the aspect ratio and centres itself in the width.
-  const height = Math.max(3, Math.floor(options.height ?? Math.min(28, Math.round((width - 2 * margin) / 2) + 2)));
+  const aspect = Number(options.cellAspect) > 0 ? Number(options.cellAspect) : 2;
+  const height = Math.max(3, Math.floor(options.height ?? Math.min(28, Math.round((width - 2 * margin) / aspect) + 2)));
   const radiusX = Math.max(2, Math.min((width - 2 * margin) / 2, height - 2));
   // The vertical radius is half the horizontal one: that ratio is the aspect
   // correction that makes the rim round on screen.
-  const radiusY = radiusX / 2;
+  const radiusY = radiusX / aspect;
 
   const cells = Array.from({ length: height }, () =>
     Array.from({ length: width }, () => ({ slice: -1, char: BLANK, kind: "outside", mask: 0 })),
@@ -170,9 +172,10 @@ export function layoutPie(slices, options = {}) {
         }
       }
       if (hole !== 0) {
-        // Drawn, not implied: the hole's sub-cells take the boundary colour over
-        // the wedge colour, exactly like the rim.
-        cells[y][x] = { slice: winner, other: -1, char: sampler.glyph(hole), kind: "line", mask };
+        // The hole is drawn by omission, like the outside of the rim: the
+        // wedge's sub-cells carry the colour and the hole's own sub-cells stay
+        // unpainted, so no dark tick lands on the ring.
+        cells[y][x] = { slice: winner, other: -1, char: glyphFor(mask, sampler.mosaic), kind: "fill", mask };
         continue;
       }
 
@@ -186,15 +189,16 @@ export function layoutPie(slices, options = {}) {
         if (mask === sampler.solidMask) {
           cells[y][x] = { slice: winner, other, char: sampler.glyph(winnerMask), kind: "edge", mask };
         } else {
-          // At the rim a background colour would paint the sub-cells that fall
-          // outside the disc, so the boundary is drawn on its own sub-cells
-          // there instead. Still inside the disc, and never more than half a
-          // cell wide.
+          // At the rim a background colour would paint the sub-cells outside the
+          // disc, and a dark boundary glyph would leave ticks on the shape. The
+          // winner fills every owned sub-cell instead: the rim stays clean, and
+          // the neighbour's few sub-cells inside are absorbed by the majority
+          // that already owns the cell.
           cells[y][x] = {
             slice: winner,
             other,
-            char: options.spokes ? spokeNear(x, y) : glyphFor(mask & ~winnerMask, sampler.mosaic),
-            kind: options.spokes ? "spoke" : "line",
+            char: options.spokes ? spokeNear(x, y) : glyphFor(mask, sampler.mosaic),
+            kind: options.spokes ? "spoke" : "fill",
             mask,
           };
         }
@@ -273,10 +277,11 @@ function resolveGlyphs(spec, slices) {
 
 function discHeight(spec, width, margin) {
   if (spec.height != null) return Math.max(3, Math.floor(spec.height));
+  const aspect = Number(spec.cellAspect) > 0 ? Number(spec.cellAspect) : 2;
   const radiusX = Math.max(2, (width - 2 * margin) / 2);
   // The same cap layoutPie applies: a wide frame gets a wide *chart*, not a
   // 70-row disc.
-  return Math.max(3, Math.min(28, Math.round(radiusX) + 2));
+  return Math.max(3, Math.min(28, Math.round((2 * radiusX) / aspect) + 2));
 }
 
 export function isDonut(spec) {
@@ -312,6 +317,7 @@ export function renderPieChart(spec) {
       spokes: spec.spokes,
       textured: spec.textured,
       mosaic: spec.mosaic,
+      cellAspect: spec.cellAspect,
     }),
   );
 
@@ -347,6 +353,7 @@ export function renderChartRows(spec) {
       spokes: spec.spokes,
       textured: spec.textured,
       mosaic: spec.mosaic,
+      cellAspect: spec.cellAspect,
     }),
   );
 

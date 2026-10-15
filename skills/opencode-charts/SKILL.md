@@ -126,7 +126,8 @@ A `gantt` task takes `label` plus `start` and `end` (numbers, or ISO dates like 
 |---|---|
 | `theme` | `dark` (default) or `light`; without it the terminal's own theme is used |
 | `palette` | array of hex colours, one per series |
-| `mosaic` | `sextant` (default), `octant` (Unicode 16, sharpest), `quadrant` (widest font support) |
+| `mosaic` | `octant` (default, Unicode 16, sharpest), `sextant`, `quadrant` (widest font support) |
+| `cellAspect` | how much taller a cell is than wide, for the round families; `2` by default — a font that draws the pie taller than wide wants about `2.3` |
 | `zero: false` | line, scatter, candle: fit the axis to the data instead of anchoring it at zero |
 | `normalized` | bar and area: every stack becomes 100% |
 | `showPercent: false` | hide the share next to a single-series value |
@@ -145,3 +146,4 @@ Renamed keys still draw and are reported in the footer: `percent` → `showPerce
 - All bars the same height: the values are strings, or a `series` was passed where `values` belongs; the footer says so.
 - A pie with one slice: negative or zero values were dropped.
 - Missing octant glyphs: the font lacks Unicode 16; use `"mosaic": "sextant"`.
+- A pie that reads taller than wide: the cell ratio is off; set `"cellAspect"` (about `2.3` for many terminal fonts).

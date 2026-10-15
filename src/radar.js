@@ -67,12 +67,13 @@ export function renderRadarRows(spec = {}) {
   const top = Number(spec.max) > 0 ? Number(spec.max) : Math.max(...values.flatMap((item) => item.values), 1e-9);
   // Same rule as the pie: a wide frame must not stretch the polygon into a
   // pancake, so the height has a cap and the horizontal radius follows it.
-  const height = Math.max(6, Math.floor(spec.height ?? Math.min(22, Math.round((width - 12) / 2) + 3)));
+  const aspect = Number(spec.cellAspect) > 0 ? Number(spec.cellAspect) : 2;
+  const height = Math.max(6, Math.floor(spec.height ?? Math.min(22, Math.round((width - 12) / aspect) + 3)));
   const padX = Math.min(11, Math.max(4, Math.floor(width * 0.22)));
   const radiusX = Math.max(2, Math.min((width - 2 * padX) / 2, height - 1.5));
   // Half a row of headroom, so the label above the top axis never lands on the
   // apex of the chart.
-  const radiusY = Math.max(1.5, Math.min(radiusX / 2, (height - 1.5) / 2));
+  const radiusY = Math.max(1.5, Math.min(radiusX / aspect, (height - 1.5) / 2));
   const cx = (width - 1) / 2;
   const cy = height / 2;
 

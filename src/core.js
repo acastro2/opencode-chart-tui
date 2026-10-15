@@ -362,9 +362,10 @@ export function tallyFromGrid(seriesAt, x, y, sampler) {
  * the glyph filling the winning one and the cell background showing the other.
  *
  * @returns {{slice: number, other?: number, char: string, kind: string, mask: number}}
- *   kind is "fill", "edge" (two series at once, wholly inside), "line" (the same
- *   boundary where it meets the shape's edge) or "spoke" when a `spoke` callback
- *   is supplied and the boundary meets the edge.
+ *   kind is "fill" (also at the shape's edge, where the winner paints every
+ *   owned sub-cell so nothing spills outside and no dark tick lands on the
+ *   shape), "edge" (two series at once, wholly inside) or "spoke" when a
+ *   `spoke` callback is supplied and the boundary meets the edge.
  */
 export function paintCell({ sampler, mask, tally, masks, glyphs = [], solidGlyph = SOLID, spoke }) {
   const winner = winnerOf(tally);
@@ -376,7 +377,7 @@ export function paintCell({ sampler, mask, tally, masks, glyphs = [], solidGlyph
       return { slice: winner, other, char: sampler.glyph(winnerMask), kind: "edge", mask };
     }
     if (spoke) return { slice: winner, other, char: spoke(winner), kind: "spoke", mask };
-    return { slice: winner, other, char: glyphFor(mask & ~winnerMask, sampler.mosaic), kind: "line", mask };
+    return { slice: winner, other, char: sampler.glyph(mask), kind: "fill", mask };
   }
 
   return { slice: winner, char: sampler.glyph(mask, glyphs[winner] ?? solidGlyph), kind: "fill", mask };

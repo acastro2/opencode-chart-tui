@@ -52,6 +52,13 @@ function themeFor(spec, mode) {
   return theme;
 }
 
+/** The plugin's own cell aspect, when its options carry one. A fence wins over it. */
+function cellAspectOption(context) {
+  const raw = context?.options?.cellAspect ?? context?.options?.options?.cellAspect;
+  const value = Number(raw);
+  return Number.isFinite(value) && value >= 1 && value <= 4 ? value : undefined;
+}
+
 function rowsNode(context, rows, palette, theme) {
   const box = new BoxRenderable(context.renderer, {
     flexDirection: "column",
@@ -120,7 +127,7 @@ export default {
             // wide frame reads as flat bands, where bars and lines stay useful.
             const cap = GRID_FAMILIES.has(spec.type) ? 110 : 160;
             const width = Math.max(20, Math.min(Number(spec.width) || Math.min(available, cap), available));
-            const rows = renderChartRows({ ...spec, theme: spec.theme ?? mode, width });
+            const rows = renderChartRows({ ...spec, theme: spec.theme ?? mode, width, cellAspect: spec.cellAspect ?? cellAspectOption(context) });
             return rowsNode(context, rows, paletteOf(spec) ?? themed.palette, themed);
           } catch (failure) {
             debug(`render failed: ${failure?.stack ?? failure?.message ?? failure}`);
