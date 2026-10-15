@@ -175,30 +175,36 @@ text here. Paste one into OpenCode and it renders.
 
 ## Install
 
-It is a native OpenCode plugin. OpenCode discovers any directory under
-`~/.config/opencode/plugins/` that holds a `tui.js`, so the install is a clone —
-no config file mentions it:
+It is a native OpenCode plugin. One command installs it:
+
+```sh
+opencode plugin add acastro2/opencode-chart-tui
+```
+
+`plugin add` fetches the package from the git repo, installs it, and pins
+`"acastro2/opencode-chart-tui"` in `opencode.json` under `plugins`; the CLI loads
+its TUI component automatically. Restart the TUI once (plugins load at startup).
+Later, `opencode plugin update` refreshes it.
+
+<details>
+<summary><b>Other ways to load it, if you need them</b></summary>
+
+- **Discovery, no config entry.** OpenCode discovers any directory under `~/.config/opencode/plugins/` that holds a `tui.js`:
 
 ```sh
 git clone https://github.com/acastro2/opencode-chart-tui ~/.config/opencode/plugins/opencode-chart-tui
 ```
 
-Restart the TUI once (plugins load at startup). That is the whole install.
-
-Developing it? Keep your checkout where it is and point the discovery directory at it:
+- **Developing it?** Keep your checkout where it is and point a discovery directory at it:
 
 ```sh
-ln -s ~/Developer/opencode-chart-tui ~/.config/opencode/plugins/opencode-chart-tui
+ln -s ~/Developer/opencode-charts ~/.config/opencode/plugins/opencode-chart-tui
 ```
 
 `src/` edits are live at the next render; a `tui.js` edit needs a restart.
 
-<details>
-<summary><b>Other ways to load it, if you need them</b></summary>
-
-- **Through the server.** List the plugin in `opencode.json(c)` under `plugins`. A plugin that exposes a TUI component is loaded by the CLI automatically, so the same entry needs no `cli.json` counterpart — and it works when the CLI is connected to a remote server.
 - **CLI-only.** `cli.json` → `plugins` takes an npm id (`pkg`, `pkg@1.0.0`, `@scope/pkg`), a relative or absolute path, or a `file://` URL; the object form `{ "package": "…", "options": { … } }` passes options. Use it for a plugin that must stay active with a remote server, or when you want the entry in one file.
-- **No dependencies of its own.** `@opentui/core` and the OpenCode plugin API resolve from the host at runtime, so nothing is installed beside the repo.
+- **No dependencies of its own.** `@opentui/core` and the OpenCode plugin API resolve from the host at runtime, so nothing is installed beside the package.
 
 </details>
 

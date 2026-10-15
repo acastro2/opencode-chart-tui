@@ -140,10 +140,18 @@ The probe imports the real plugin, stubs
 `@opentui/core/testing` and reports `width mismatches` per frame. Any change to
 `tui.js` deserves that run before you claim it works.
 
-**Development is live, the plugin is not.** `~/.config/opencode/plugins/opencode-chart-tui`
-is a symlink to this repo, which is how OpenCode discovers the plugin at all (a
-discovery directory holding `tui.js` needs no config entry). `src/*.js` edits
-appear at the next render; a change to `tui.js` needs the TUI restarted.
+**The installed plugin is a cached copy, not this checkout.** OpenCode installs
+`acastro2/opencode-chart-tui` from GitHub into
+`~/.cache/opencode/npm/git-opencode-chart-tui-*/`. It loads the server half from
+the package root (`index.js`: a default definition with an id and a `setup`
+function) and the TUI half from the `./tui` export — a package whose root is not
+a plugin definition fails with `Plugin must export a default definition`. Editing
+this checkout changes nothing until you push and run `opencode plugin update`.
+That update re-clones, but `plugin add` alone reuses the cache, so delete
+`~/.cache/opencode/npm/git-opencode-chart-tui-*` to force a clean install. For a
+live loop use a discovery symlink under `~/.config/opencode/plugins/` instead:
+`src/*.js` edits appear at the next render; a change to `tui.js` needs the TUI
+restarted.
 
 ## 5. Verification discipline (what "done" means here)
 
