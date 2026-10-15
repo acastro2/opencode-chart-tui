@@ -175,19 +175,21 @@ text here. Paste one into OpenCode and it renders.
 
 ## Install
 
-It is a native OpenCode plugin. One command installs a release:
+It is a native OpenCode plugin. One command installs it from the newest code
+(the default branch):
 
 ```sh
-opencode plugin add acastro2/opencode-chart-tui#v0.1.0
+opencode plugin add acastro2/opencode-chart-tui
 ```
 
-`plugin add` fetches the tagged package from the git repo, installs it, and pins
-that spec in `opencode.json` under `plugins`; the CLI loads its TUI component
-automatically. Restart the TUI once (plugins load at startup).
+`plugin add` fetches the package from the git repo, installs it, and pins that
+spec in `opencode.json` under `plugins`; the CLI loads its TUI component
+automatically. Restart the TUI once (plugins load at startup), and refresh later
+with `opencode plugin update`.
 
-To track the newest code instead of a release, drop the `#v0.1.0` and refresh with
-`opencode plugin update`. Releases are tagged and listed on the
-[releases page](https://github.com/acastro2/opencode-chart-tui/releases).
+Want a fixed release instead of the moving branch? Append a tag:
+`opencode plugin add acastro2/opencode-chart-tui#v0.1.0` — releases are listed on
+the [releases page](https://github.com/acastro2/opencode-chart-tui/releases).
 
 <details>
 <summary><b>Other ways to load it, if you need them</b></summary>
