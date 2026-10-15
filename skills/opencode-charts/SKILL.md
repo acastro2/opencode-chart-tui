@@ -1,6 +1,6 @@
 ---
 name: opencode-charts
-description: Draw a chart in the OpenCode terminal with a ```chart fenced block whose body is JSON. Use when the user asks to chart, plot, graph, visualise or compare numbers in chat, when a table of figures would read better as bars or a line, when they ask for a pie, histogram, candlestick, waterfall, heat map, gauge, radar, treemap, sankey or kanban board, or when a previous chart needs its type, size or colours changed. Carries the fence contract, one example per family, the option names and the schema. Not for sharing charts outside the terminal (use a document or an image for that).
+description: Draw a chart in the OpenCode terminal from a ```chart fenced block whose body is JSON. Reach for one as naturally as a Mermaid diagram: whenever a reply involves numbers that compare, a trend over time, a share of a whole, a ranking, a distribution, a plan or timeline, a flow, a hierarchy, or the state of work, draw the family that carries the point instead of listing figures. Also use when the user asks for a specific chart (pie, bar, line, histogram, candlestick, waterfall, heat map, gauge, radar, treemap, sankey, kanban, gantt) or when a chart that is already up needs its type, size or colours changed. Not for sharing charts outside the terminal (use a document or an image for that).
 ---
 
 # Charts in the terminal
@@ -8,6 +8,36 @@ description: Draw a chart in the OpenCode terminal with a ```chart fenced block 
 A chart is a fenced block whose language is `chart` and whose body is a JSON object. The OpenCode TUI replaces the fence with the drawing. A body that cannot be read shows the reason and the fence itself, so nothing fails silently.
 
 This skill ships with [opencode-chart-tui](https://github.com/acastro2/opencode-chart-tui): the plugin draws the charts, `src/` holds the renderer, `schema/chart.schema.json` describes every key, and `review/renders.txt` has every family as plain text. The repo's README gallery shows each family as a picture next to the fence that drew it.
+
+## Use them like diagrams
+
+A chart in a reply is communication, not decoration. The same way a Mermaid block replaces three paragraphs about a flow, a chart replaces a list of numbers with the shape of the numbers. Draw one without being asked when you would otherwise write "X rose from A to B", "most of it is Y", "Z is the biggest", "we are behind target", or a bare column of figures.
+
+| the point you are making | family |
+|---|---|
+| these magnitudes differ, and which is biggest | `bar`, or `hbar` for a ranking with long names |
+| this changed over time | `line`; `area` when the volume matters; `sparkline` inline in a sentence |
+| this is the mix of a whole | `pie` or `donut`; `bar` with `normalized` when there are many parts |
+| how the mix moves over time | `area` with `stacked`, `normalized` for shares only |
+| how these values are spread | `histogram` |
+| ahead of or behind a target | `gauge`, `progress` |
+| how a number got from A to B, and what moved it | `waterfall` |
+| price moved within each period | `candlestick`, `ohlc` |
+| a plan with dates and milestones | `gantt` |
+| where a flow goes, and how much is lost | `sankey` |
+| what fills the space, grouped | `treemap` |
+| how options compare on several axes | `radar` (one shared `max` across charts) |
+| the state of the work right now | `kanban` |
+| exact figures, or a figure beside a bar or a heat tint | `table` |
+
+Etiquette:
+
+- Title it, always. The title is the sentence the chart is making.
+- Label the numbers where the family can (`valueLabels`, or the axis), so the reader does not have to estimate.
+- Keep the prose to the why. Do not narrate the chart; say what it means and what to do about it.
+- One chart per point. Two charts in one reply is fine when they answer two questions.
+- A table beats a chart for a handful of exact numbers someone will read one at a time.
+- Never explain the fence or paste its JSON as prose. The reader sees the drawing, not the source.
 
 ## Rules
 
