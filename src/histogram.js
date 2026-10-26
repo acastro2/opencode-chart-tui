@@ -6,8 +6,9 @@
 //
 //   { "type": "histogram", "values": [1.2, 3.4, 3.9, ...], "bins": 8 }
 
-import { formatNumber, titleRow } from "./core.js";
-import { renderBarRows } from "./bar.js";
+import { formatNumber, titleRow, wrapText } from "./core.js";
+import { hiddenCategoryCount, renderBarRows, verticalLabelRow } from "./bar.js";
+import { plotRows as plotRowsFor } from "./layout.js";
 
 /** Automatic bin count: the square-root rule, capped so the bars stay readable. */
 export function binCount(samples, requested) {
@@ -54,52 +55,95 @@ export function binLabels(bins) {
   return bins.map((item) => `${formatNumber(item.from)}–${formatNumber(item.to)}`);
 }
 
+function widthOf(spec) {
+  return Math.max(16, Math.floor(spec.width ?? 48));
+}
+
+function valuesOf(spec) {
+  if (Array.isArray(spec.values)) return spec.values;
+  return Array.isArray(spec.data) ? spec.data : [];
+}
+
+function footerLinesFor(spec, note, width) {
+  if (spec.note === false) return [];
+  return wrapText(note, Math.max(8, width - 2)).slice(0, 2);
+}
+
+/** The bar spec the bins are drawn with: no legend, no percent, thinned labels. */
+function barSpecFor(spec, width, footerLines) {
+  return {
+    type: "bar",
+    width,
+    plotHeight: plotRowsFor(spec, {
+      chrome: (spec.title ? 1 : 0) + 1 + footerLines.length,
+      fallback: 8,
+    }),
+    ticks: spec.ticks,
+    mosaic: spec.mosaic,
+    textured: spec.textured,
+    gap: spec.gap,
+    showPercent: false,
+    legend: false,
+    valueLabels: spec.valueLabels === true,
+    // Bin edges are longer than one bar slot, so they are thinned rather than cut.
+    slotLabels: false,
+  };
+}
+
+/**
+ * A range is the label a reader wants ("0–82.5", not "0"), but it is about twice
+ * as wide as the left edge it replaces. Show the ranges only when the whole row
+ * fits; when two of them would collide, keep the short edges so the axis still
+ * reads. The bar layout owns that row, so it answers with the real geometry
+ * instead of an estimate.
+ */
+function labelsFor(bins, barSpec, width, counts) {
+  const rangeLabels = binLabels(bins);
+  const series = [{ name: "count", values: counts }];
+  const placed = verticalLabelRow(barSpec, width, rangeLabels, series).split(/\s+/).filter(Boolean);
+  return placed.length === rangeLabels.length ? rangeLabels : bins.map((item) => formatNumber(item.from));
+}
+
+function pushFooter(rows, width, lines) {
+  for (const line of lines) {
+    rows.push({ width, runs: [{ text: `  ${line}`, slice: -1, kind: "legend" }] });
+  }
+}
+
 export function renderHistogramRows(spec) {
-  const width = Math.max(16, Math.floor(spec.width ?? 48));
-  const values = Array.isArray(spec.values) ? spec.values : Array.isArray(spec.data) ? spec.data : [];
+  const width = widthOf(spec);
   const rows = [];
 
   if (spec.title) rows.push(titleRow(String(spec.title), width));
 
-  const { bins, width: binWidth, samples } = bin(values, spec.bins);
+  const { bins, width: binWidth, samples } = bin(valuesOf(spec), spec.bins);
   if (bins.length === 0) {
     rows.push({ width, runs: [{ text: "no data", slice: -1, kind: "legend" }] });
     return rows;
   }
 
+  const note = `${samples} values, ${bins.length} bins of ${formatNumber(binWidth)}`;
+  const footer = footerLinesFor(spec, note, width);
+
   // A fresh spec: normalizeSeries prefers series over values, so nothing that
-  // arrived as series can leak into the bar chart.
-  rows.push(
-    ...renderBarRows({
-      type: "bar",
-      width,
-      height: spec.height ?? 8,
-      labels: bins.map((item) => formatNumber(item.from)),
-      values: bins.map((item) => item.count),
-      ticks: spec.ticks,
-      mosaic: spec.mosaic,
-      textured: spec.textured,
-      gap: spec.gap,
-      percent: false,
-      legend: false,
-      valueLabels: spec.valueLabels === true,
-      // Bin edges are longer than one bar slot, so they are thinned rather than cut.
-      slotLabels: false,
-    }),
-  );
+  // arrived as series can leak into the bar chart. The bar keeps the plot area;
+  // the histogram owns the title row and the footer, so it subtracts both before
+  // it hands the plot height over.
+  const counts = bins.map((item) => item.count);
+  const barSpec = barSpecFor(spec, width, footer);
+  const labels = labelsFor(bins, barSpec, width, counts);
 
-  if (spec.note !== false) {
-    rows.push({
-      width,
-      runs: [
-        {
-          text: `${samples} values, ${bins.length} bins of ${formatNumber(binWidth)}`,
-          slice: -1,
-          kind: "legend",
-        },
-      ],
-    });
-  }
+  // Too many bins for the width costs the bar one row for its hidden-category
+  // note. The bar layout owns that rule, so ask it for the count and take the row
+  // out of the plot here: the block then stays inside `height` and the note is
+  // the row the reader sees, not the generic height guard's replacement. With no
+  // `height` there is no ceiling to protect, so the plot is left alone.
+  const hidden = hiddenCategoryCount(barSpec, width, labels, [{ name: "count", values: counts }]);
+  // `plotHeight` is an explicit plot size, so it wins over a budget adjustment.
+  const budgeted = hidden > 0 && Number(spec.height) > 0 && spec.plotHeight == null;
+  const plotHeight = budgeted ? Math.max(3, barSpec.plotHeight - 1) : barSpec.plotHeight;
 
+  rows.push(...renderBarRows({ ...barSpec, plotHeight, labels, values: counts }));
+  pushFooter(rows, width, footer);
   return rows;
 }

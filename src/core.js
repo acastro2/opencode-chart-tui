@@ -5,7 +5,16 @@
 // Nothing here knows what a pie or a bar is. Each family imports this and adds
 // its own geometry.
 
-import { glyphFor, modeShape } from "./mosaic.js";
+import { glyphFor, modeName, modeShape } from "./mosaic.js";
+import {
+  displayWidth,
+  graphemeWidth,
+  graphemes,
+  padByWidth,
+  padStartByWidth,
+  truncateByWidth,
+  wrapByWidth,
+} from "./text.js";
 
 export const SOLID = "█";
 export const BLANK = " ";
@@ -36,21 +45,87 @@ export const DEFAULT_PALETTE = [
   "#9a9a52", // olive
 ];
 
-/** Dark text on a light fill, light text on a dark fill. */
-export function contrastOn(hex) {
+/** WCAG relative luminance: linearise every sRGB channel first. */
+function relativeLuminance(hex) {
   const value = String(hex).replace("#", "");
   const full = value.length === 3 ? value.replace(/./g, (char) => char + char) : value.slice(0, 6);
-  const red = parseInt(full.slice(0, 2), 16) || 0;
-  const green = parseInt(full.slice(2, 4), 16) || 0;
-  const blue = parseInt(full.slice(4, 6), 16) || 0;
-  // Rec. 709 relative luminance, good enough to choose black or white.
-  const luminance = (0.2126 * red + 0.7152 * green + 0.0722 * blue) / 255;
-  return luminance > 0.45 ? "#101010" : "#ffffff";
+  const channel = (offset) => {
+    const part = parseInt(full.slice(offset, offset + 2), 16) / 255;
+    if (!Number.isFinite(part)) return 0;
+    return part <= 0.04045 ? part / 12.92 : ((part + 0.055) / 1.055) ** 2.4;
+  };
+  return 0.2126 * channel(0) + 0.7152 * channel(2) + 0.0722 * channel(4);
+}
+
+/** WCAG contrast ratio, 1 to 21. */
+function contrastRatio(a, b) {
+  const high = Math.max(a, b);
+  const low = Math.min(a, b);
+  return (high + 0.05) / (low + 0.05);
+}
+
+/**
+ * Dark text on a light fill, light text on a dark fill. Compare the two real
+ * ratios instead of guessing from one luminance threshold; the old rule picked
+ * the weaker colour for mid-tone fills.
+ */
+export function contrastOn(hex) {
+  const fill = relativeLuminance(hex);
+  const dark = relativeLuminance("#101010");
+  const light = relativeLuminance("#ffffff");
+  return contrastRatio(fill, dark) >= contrastRatio(fill, light) ? "#101010" : "#ffffff";
 }
 
 /** "62.0%" */
 export function formatPercent(value, total) {
   return `${((value / total) * 100).toFixed(1)}%`;
+}
+
+/**
+ * `showPercent` is the contract. `percent` is the old name, still accepted so an
+ * existing fence keeps drawing while the note tells the author what changed.
+ */
+export function showPercentOf(spec, fallback = true) {
+  if (spec?.showPercent !== undefined) return Boolean(spec.showPercent);
+  if (spec?.percent !== undefined) return Boolean(spec.percent);
+  return fallback;
+}
+
+/** The unit suffixes formatNumber can reach, largest last. */
+const NUMBER_UNITS = ["", "k", "M", "G", "T", "P"];
+
+/** Two decimals under 10, one under 100, none above; trailing decimal zeros dropped. */
+function roundScaled(scaled) {
+  const digits = scaled >= 100 ? 0 : scaled >= 10 ? 1 : 2;
+  const text = scaled.toFixed(digits);
+  // Strip trailing zeros after a decimal point only: 1.20 -> 1.2, but 120 stays 120.
+  return text.includes(".") ? text.replace(/\.?0+$/, "") : text;
+}
+
+/** The largest unit the number reaches, and the mantissa in that unit. */
+function compactScaled(size) {
+  let power = 0;
+  let scaled = size;
+  while (scaled >= 1000 && power < NUMBER_UNITS.length - 1) {
+    scaled /= 1000;
+    power += 1;
+  }
+  return { power, scaled };
+}
+
+/** A number at or above 1000, in the shortest unit that does not round to 1000. */
+function compactNumber(size) {
+  const { power, scaled } = compactScaled(size);
+  const text = roundScaled(scaled);
+  const rounded = Number(text) >= 1000 && power < NUMBER_UNITS.length - 1;
+  if (!rounded) return `${text}${NUMBER_UNITS[power]}`;
+  return `${roundScaled(size / 1000 ** (power + 1))}${NUMBER_UNITS[power + 1]}`;
+}
+
+/** A number below 1000: two significant digits under 0.01, else the rounded value. */
+function magnitudeText(size) {
+  if (size < 0.01) return `${Number(size.toPrecision(2))}`;
+  return size < 1000 ? roundScaled(size) : compactNumber(size);
 }
 
 /**
@@ -65,68 +140,59 @@ export function formatNumber(value) {
   if (!Number.isFinite(number)) return "?";
   if (number === 0) return "0";
   const sign = number < 0 ? "-" : "";
-  const size = Math.abs(number);
-  const round = (scaled) => {
-    const text = scaled >= 100 ? scaled.toFixed(0) : scaled >= 10 ? scaled.toFixed(1) : scaled.toFixed(2);
-    // Strip trailing zeros after a decimal point only: 1.20 -> 1.2, but 120 stays 120.
-    return text.includes(".") ? text.replace(/\.?0+$/, "") : text;
-  };
-
-  if (size < 0.01) return `${sign}${Number(size.toPrecision(2)).toString()}`;
-  if (size < 1000) return `${sign}${round(size)}`;
-
-  const units = ["", "k", "M", "G", "T", "P"];
-  let power = 0;
-  let scaled = size;
-  while (scaled >= 1000 && power < units.length - 1) {
-    scaled /= 1000;
-    power += 1;
-  }
-  let text = round(scaled);
-  if (Number(text) >= 1000 && power < units.length - 1) {
-    power += 1;
-    text = round(size / 1000 ** power);
-  }
-  return `${sign}${text}${units[power]}`;
+  return `${sign}${magnitudeText(Math.abs(number))}`;
 }
 
 /**
- * Width in code points, not UTF-16 units. The mosaic glyphs live outside the
- * basic multilingual plane, so `text.length` counts them twice.
+ * Width in terminal cells, not code points and not UTF-16 units. A mosaic glyph
+ * is one cell; a CJK character is two; a combining mark is zero.
  */
 export function cols(text) {
-  return [...String(text)].length;
+  return displayWidth(text);
 }
 
-/** Cut to a width in code points, with an ellipsis when it does not fit. */
+/** Cut to a width in cells, with an ellipsis when it does not fit. */
 export function truncate(text, width) {
-  const value = String(text);
-  if (width <= 0) return "";
-  if (cols(value) <= width) return value;
-  return [...value].slice(0, Math.max(1, width - 1)).join("") + "…";
+  return truncateByWidth(text, width);
 }
 
-/** Pad to a width in code points. */
+/** Pad to a width in cells. */
 export function padTo(text, width) {
-  const value = String(text);
-  const length = cols(value);
-  return length >= width ? value : value + BLANK.repeat(width - length);}
+  return padByWidth(text, width);
+}
 
 /** Pad with spaces on the left, so numbers line up under each other. */
 export function padStart(text, width) {
-  const value = String(text);
-  const pad = Math.max(0, width - cols(value));
-  return BLANK.repeat(pad) + value;
+  return padStartByWidth(text, width);
+}
+
+/** An array entry as `{ label, value }`, with the label already a string. */
+function arrayEntry(item) {
+  return { label: String(item[0] ?? ""), value: Number(item[1]) };
+}
+
+/** An object entry as `{ label, value }`, with the label already a string. */
+function objectEntry(item) {
+  return { label: String(item?.label ?? ""), value: Number(item?.value) };
+}
+
+/** One entry in either accepted shape, normalized. */
+function entryParts(item) {
+  return Array.isArray(item) ? arrayEntry(item) : objectEntry(item);
+}
+
+/** A value a chart can draw: finite and above zero. */
+function positiveValue(value) {
+  return Number.isFinite(value) && value > 0;
 }
 
 /** Accept [[label, value]] or [{ label, value }], drop empty values, keep order. */
 export function normalizeEntries(input) {
   const entries = [];
   for (const item of input ?? []) {
-    const label = Array.isArray(item) ? item[0] : item?.label;
-    const value = Number(Array.isArray(item) ? item[1] : item?.value);
-    if (!Number.isFinite(value) || value <= 0) continue;
-    entries.push({ label: String(label ?? ""), value });
+    const { label, value } = entryParts(item);
+    if (!positiveValue(value)) continue;
+    entries.push({ label, value });
   }
   return entries;
 }
@@ -224,6 +290,73 @@ function hexOfOklab({ L, a, b }) {
     .join("")}`;
 }
 
+/** True when the spec named its series; otherwise `values` is the one series. */
+function hasSeries(spec) {
+  return Array.isArray(spec.series) && spec.series.length > 0;
+}
+
+/** The raw series list: `series` wins over `values`, and neither is an error. */
+function seriesSource(spec, fallbackName) {
+  if (hasSeries(spec)) return spec.series;
+  if (!Array.isArray(spec.values)) return [];
+  return [{ name: spec.name ?? fallbackName, values: spec.values }];
+}
+
+/** A non-numeric point becomes zero, so one bad cell cannot drop a series. */
+function finiteOrZero(value) {
+  const number = Number(value);
+  return Number.isFinite(number) ? number : 0;
+}
+
+/** The numbers of one series, copied so padding cannot touch the caller's array. */
+function seriesValues(item) {
+  const numbers = Array.isArray(item) ? item : (item?.values ?? []);
+  return [...numbers].map(finiteOrZero);
+}
+
+/** The name of a plain-array series: the spec's name, or the fallback. */
+function arrayItemName(spec, fallbackName) {
+  return spec.name ?? fallbackName;
+}
+
+/** The name of an object series: its own, the spec's, or its position. */
+function namedItemName(item, spec, index) {
+  return item?.name ?? spec.name ?? `series ${index + 1}`;
+}
+
+/** The name of one series item, whichever shape it came in. */
+function itemName(item, spec, index, fallbackName) {
+  return Array.isArray(item) ? arrayItemName(spec, fallbackName) : namedItemName(item, spec, index);
+}
+
+function longerOf(longest, item) {
+  return Math.max(longest, item.values.length);
+}
+
+function labelCount(spec) {
+  return Array.isArray(spec.labels) ? spec.labels.length : 0;
+}
+
+/** The longest series or label list: the number of points every series must have. */
+function seriesLength(series, spec) {
+  return Math.max(series.reduce(longerOf, 0), labelCount(spec));
+}
+
+/** Pad every series to `length` with zeros, in place. */
+function padSeries(series, length) {
+  for (const item of series) while (item.values.length < length) item.values.push(0);
+}
+
+function labelAt(labels, index) {
+  return String(labels[index] ?? index + 1);
+}
+
+/** Labels from the spec when given, else the point's position. */
+function labelsFor(spec, length) {
+  const labels = Array.isArray(spec.labels) ? spec.labels : [];
+  return Array.from({ length }, (_, index) => labelAt(labels, index));
+}
+
 /**
  * The series shape every chart family shares: labels plus one or more named
  * series of numbers. Accepts `values: [..]` for a single series or
@@ -231,41 +364,67 @@ function hexOfOklab({ L, a, b }) {
  * Missing labels become their position.
  */
 export function normalizeSeries(spec, fallbackName = "value") {
-  const raw =
-    Array.isArray(spec.series) && spec.series.length > 0
-      ? spec.series
-      : Array.isArray(spec.values)
-        ? [{ name: spec.name ?? fallbackName, values: spec.values }]
-        : [];
-
   const series = [];
-  for (const [index, item] of raw.entries()) {
-    const numbers = Array.isArray(item) ? item : (item?.values ?? []);
-    const values = [...numbers].map((value) => {
-      const number = Number(value);
-      return Number.isFinite(number) ? number : 0;
-    });
+  for (const [index, item] of seriesSource(spec, fallbackName).entries()) {
+    const values = seriesValues(item);
     if (values.length === 0) continue;
-    const name = Array.isArray(item) ? spec.name ?? fallbackName : item?.name ?? spec.name ?? `series ${index + 1}`;
-    series.push({ name: String(name), values });
+    series.push({ name: String(itemName(item, spec, index, fallbackName)), values });
   }
 
-  const length = Math.max(
-    series.reduce((longest, item) => Math.max(longest, item.values.length), 0),
-    Array.isArray(spec.labels) ? spec.labels.length : 0,
-  );
-  for (const item of series) while (item.values.length < length) item.values.push(0);
-
-  const labels =
-    Array.isArray(spec.labels) && spec.labels.length > 0
-      ? Array.from({ length }, (_, index) => String(spec.labels[index] ?? index + 1))
-      : Array.from({ length }, (_, index) => String(index + 1));
-
-  return { labels, series };
+  const length = seriesLength(series, spec);
+  padSeries(series, length);
+  return { labels: labelsFor(spec, length), series };
 }
 
 /** Kept for callers that already speak of slices. */
 export const sliceGlyphs = seriesGlyphs;
+
+/** Sentinel for a sub-cell outside the shape; a series index can be NaN. */
+const OUTSIDE = Symbol("outside");
+
+/** The shape's predicate: false, null, undefined and negatives mean "not here". */
+function inShape(value) {
+  return value !== false && value !== null && value !== undefined && !(value < 0);
+}
+
+/** The series index of a sub-cell, or OUTSIDE. `true` means series 0. */
+function subCellSeries(value) {
+  if (!inShape(value)) return OUTSIDE;
+  return value === true ? 0 : value;
+}
+
+/** Add one owned sub-cell to the mask and the two tallies. */
+function addSubCell(state, index, bit) {
+  state.mask |= bit;
+  state.masks.set(index, (state.masks.get(index) ?? 0) | bit);
+  state.tally.set(index, (state.tally.get(index) ?? 0) + 1);
+}
+
+/** Sample every sub-cell of one cell through `classify`. */
+function sampleCell(sampler, x, y, classify) {
+  const { shape } = sampler;
+  const state = { mask: 0, tally: new Map(), masks: new Map() };
+  for (let row = 0; row < shape.rows; row++) {
+    for (let column = 0; column < shape.columns; column++) {
+      // Sub-cell centres, centred on the cell (-1/3, 0, +1/3 for a sextant).
+      // Centring matters: an offset grid sampled from the cell edge is not
+      // symmetric, so a rim drifts half a sub-cell.
+      const index = subCellSeries(
+        classify(
+          x + (column + 0.5 - shape.columns / 2) / shape.columns,
+          y + (row + 0.5 - shape.rows / 2) / shape.rows,
+        ),
+      );
+      if (index !== OUTSIDE) addSubCell(state, index, 1 << (row * shape.columns + column));
+    }
+  }
+  return state;
+}
+
+/** The glyph for a mask, or the series glyph when the cell is fully filled. */
+function glyphOf(sampler, mask, solidGlyph = SOLID) {
+  return mask === sampler.solidMask ? solidGlyph : glyphFor(mask, sampler.mosaic);
+}
 
 /**
  * Sub-cell sampler: every cell is sampled as a small grid (2x2, 2x3 or 2x4)
@@ -280,11 +439,14 @@ export function makeSampler(mode) {
   // terminal font that draws blocks at all. Octants (Unicode 16) are smoother
   // and one field away — `"mosaic": "octant"` — but a font without them turns
   // the sub-cell rim into boxes, and a width check cannot see that.
-  const mosaic = mode === false ? "quadrant" : (mode ?? "sextant");
+  //
+  // A name `modeName` does not know (`"octants"`) is that default too: the
+  // sampler runs inside the TUI's measure pass, outside the plugin's try/catch,
+  // so a typo must draw the standard grid rather than lose the whole frame.
+  const mosaic = mode === false ? "quadrant" : modeName(mode);
   const shape = modeShape(mosaic);
   const subCells = shape.columns * shape.rows;
-
-  return {
+  const sampler = {
     mosaic,
     shape,
     subCells,
@@ -293,43 +455,12 @@ export function makeSampler(mode) {
     // which is what the whole-cell renderer used to do. Finer modes can claim a
     // cell with a single sub-cell, because a fragment is already more faithful.
     minimum: mosaic === "quadrant" ? 2 : 1,
-
-    /**
-     * @param {number} x cell column
-     * @param {number} y cell row
-     * @param {(x: number, y: number) => (number|boolean)} classify returns the
-     *   series index of the shape at that point, true for series 0, or a falsy
-     *   value for a point outside the shape.
-     */
-    sample(x, y, classify) {
-      const tally = new Map();
-      const masks = new Map();
-      let mask = 0;
-      for (let row = 0; row < shape.rows; row++) {
-        for (let column = 0; column < shape.columns; column++) {
-          // Sub-cell centres, centred on the cell (-1/3, 0, +1/3 for a sextant).
-          // Centring matters: an offset grid sampled from the cell edge is not
-          // symmetric, so a rim drifts half a sub-cell.
-          const value = classify(
-            x + (column + 0.5 - shape.columns / 2) / shape.columns,
-            y + (row + 0.5 - shape.rows / 2) / shape.rows,
-          );
-          if (value === false || value === null || value === undefined || value < 0) continue;
-          const index = value === true ? 0 : value;
-          const bit = 1 << (row * shape.columns + column);
-          mask |= bit;
-          masks.set(index, (masks.get(index) ?? 0) | bit);
-          tally.set(index, (tally.get(index) ?? 0) + 1);
-        }
-      }
-      return { mask, tally, masks };
-    },
-
-    /** The glyph for a mask, or the series glyph when the cell is fully filled. */
-    glyph(mask, solidGlyph = SOLID) {
-      return mask === 2 ** subCells - 1 ? solidGlyph : glyphFor(mask, mosaic);
-    },
   };
+  // Bound rather than closed over: a nested function would be one more branch
+  // for the complexity gate, and binding keeps `this` irrelevant to callers.
+  sampler.sample = sampleCell.bind(null, sampler);
+  sampler.glyph = glyphOf.bind(null, sampler);
+  return sampler;
 }
 
 /**
@@ -408,37 +539,58 @@ export function secondIndex(tally, winner) {
   return other;
 }
 
-/**
- * Cells to runs, merged while series, kind and the second series agree. Trailing
- * blanks carry no information and only make the frame longer.
- */
+/** The style fields a run compares on, with the cell's absent values spelled out. */
+function cellStyle(cell) {
+  return {
+    other: cell.other ?? -1,
+    color: cell.color ?? null,
+    background: cell.background ?? null,
+  };
+}
+
+/** True when a run carries the same explicit colours as `style`. */
+function sameColour(run, style) {
+  return (run.color ?? null) === style.color && (run.background ?? null) === style.background;
+}
+
+/** True when `cell` belongs to the run, so its glyph can extend the text. */
+function sameRun(run, cell, style) {
+  return run.slice === cell.slice && run.kind === cell.kind && run.other === style.other && sameColour(run, style);
+}
+
+/** A fresh run for a cell that starts one. */
+function startRun(cell, style) {
+  const run = { text: cell.char, slice: cell.slice, kind: cell.kind, other: style.other };
+  // A run may carry its own colours, which is how a heat map paints a ramp
+  // instead of a palette entry.
+  if (style.color) run.color = style.color;
+  if (style.background) run.background = style.background;
+  return run;
+}
+
+function isBlankRun(run) {
+  return run.text.trim() === "";
+}
+
+/** Drop the trailing blank runs: they carry no information and lengthen the frame. */
+function dropTrailingBlanks(runs) {
+  while (runs.length > 0 && isBlankRun(runs[runs.length - 1])) runs.pop();
+  return runs;
+}
+
+/** Cells to runs, merged while series, kind and the second series agree. */
 export function cellsToRuns(cells) {
   const runs = [];
-  let current = null;
   for (const cell of cells) {
-    const other = cell.other ?? -1;
-    const color = cell.color ?? null;
-    const background = cell.background ?? null;
-    if (
-      current &&
-      current.slice === cell.slice &&
-      current.kind === cell.kind &&
-      current.other === other &&
-      (current.color ?? null) === color &&
-      (current.background ?? null) === background
-    ) {
+    const style = cellStyle(cell);
+    const current = runs[runs.length - 1];
+    if (current && sameRun(current, cell, style)) {
       current.text += cell.char;
       continue;
     }
-    current = { text: cell.char, slice: cell.slice, kind: cell.kind, other };
-    // A run may carry its own colours, which is how a heat map paints a ramp
-    // instead of a palette entry.
-    if (color) current.color = color;
-    if (background) current.background = background;
-    runs.push(current);
+    runs.push(startRun(cell, style));
   }
-  while (runs.length > 0 && runs[runs.length - 1].text.trim() === "") runs.pop();
-  return runs;
+  return dropTrailingBlanks(runs);
 }
 
 /** The plain text of a run row. */
@@ -530,19 +682,51 @@ export function blankGrid(width, height) {
   );
 }
 
-/** Write text into a grid, one cell per code point, clipped to the grid. */
+/** True when a cell is the second half of a wide glyph. */
+function isContinuation(cell) {
+  return Boolean(cell && cell.cont);
+}
+
+/** A composing mark belongs to the glyph before it, not to a cell of its own. */
+function attachMark(row, cursor, mark) {
+  let base = cursor - 1;
+  while (base > 0 && isContinuation(row[base])) base -= 1;
+  if (row[base]) row[base] = { ...row[base], char: row[base].char + mark };
+}
+
+/** Write one grapheme, and the empty continuation cell when it is wide. */
+function writeGlyph(row, cursor, char, cells, template) {
+  row[cursor] = { ...template, char };
+  if (cells === 2) row[cursor + 1] = { ...template, char: "", cont: true };
+}
+
+/** Write one grapheme at the cursor; false when it does not fit and the run ends. */
+function stampGrapheme(state, char) {
+  const cells = graphemeWidth(char);
+  if (cells === 0) {
+    attachMark(state.row, state.cursor, char);
+    return true;
+  }
+  if (state.cursor + cells > state.row.length) return false;
+  writeGlyph(state.row, state.cursor, char, cells, state.template);
+  state.cursor += cells;
+  state.written += cells;
+  return true;
+}
+
+/**
+ * Write text into a grid, one grapheme per cell (two for a wide glyph), clipped
+ * to the grid. A wide glyph leaves an empty continuation cell so the row still
+ * has exactly one grid entry per terminal column.
+ */
 export function stampText(grid, x, y, text, template = {}) {
   const row = grid[y];
   if (!row) return 0;
-  let cursor = Math.max(0, Math.floor(x));
-  let written = 0;
-  for (const char of [...String(text)]) {
-    if (cursor >= row.length) break;
-    row[cursor] = { ...template, char };
-    cursor += 1;
-    written += 1;
+  const state = { row, cursor: Math.max(0, Math.floor(x)), written: 0, template };
+  for (const char of graphemes(text)) {
+    if (!stampGrapheme(state, char)) break;
   }
-  return written;
+  return state.written;
 }
 
 /** Fill a rectangle of a grid, clipped to the grid. */
@@ -555,63 +739,42 @@ export function fillRect(grid, x0, y0, x1, y1, template = {}) {
   }
 }
 
+/** Border characters, with the caller's overrides on top. */
+function boxGlyphs(template) {
+  return { tl: "╭", tr: "╮", bl: "╰", br: "╯", h: "─", v: "│", ...(template.glyph ?? {}) };
+}
+
+function drawHorizontalEdges(grid, x0, x1, y0, y1, glyph, template) {
+  for (let x = x0 + 1; x < x1; x++) stampText(grid, x, y0, glyph.h, template);
+  if (y1 !== y0) for (let x = x0 + 1; x < x1; x++) stampText(grid, x, y1, glyph.h, template);
+}
+
+function drawVerticalEdges(grid, x0, x1, y0, y1, glyph, template) {
+  for (let y = y0 + 1; y < y1; y++) stampText(grid, x0, y, glyph.v, template);
+  if (x1 !== x0) for (let y = y0 + 1; y < y1; y++) stampText(grid, x1, y, glyph.v, template);
+}
+
+function drawCorners(grid, x0, y0, x1, y1, glyph, template) {
+  stampText(grid, x0, y0, glyph.tl, template);
+  stampText(grid, x1, y0, glyph.tr, template);
+  if (y1 === y0) return;
+  stampText(grid, x0, y1, glyph.bl, template);
+  stampText(grid, x1, y1, glyph.br, template);
+}
+
 /** Draw a box border into a grid, clipped to the grid. */
 export function drawBox(grid, x0, y0, x1, y1, template = {}) {
   if (x1 < x0 || y1 < y0) return;
-  const glyph = { tl: "╭", tr: "╮", bl: "╰", br: "╯", h: "─", v: "│", ...(template.glyph ?? {}) };
-  for (let x = x0 + 1; x < x1; x++) {
-    stampText(grid, x, y0, glyph.h, template);
-    if (y1 !== y0) stampText(grid, x, y1, glyph.h, template);
-  }
-  for (let y = y0 + 1; y < y1; y++) {
-    stampText(grid, x0, y, glyph.v, template);
-    if (x1 !== x0) stampText(grid, x1, y, glyph.v, template);
-  }
-  stampText(grid, x0, y0, glyph.tl, template);
-  stampText(grid, x1, y0, glyph.tr, template);
-  if (y1 !== y0) {
-    stampText(grid, x0, y1, glyph.bl, template);
-    stampText(grid, x1, y1, glyph.br, template);
-  }
+  const glyph = boxGlyphs(template);
+  drawHorizontalEdges(grid, x0, x1, y0, y1, glyph, template);
+  drawVerticalEdges(grid, x0, x1, y0, y1, glyph, template);
+  drawCorners(grid, x0, y0, x1, y1, glyph, template);
 }
 
 /**
- * Greedy word wrap. A word longer than the line is broken rather than dropped,
- * and a blank line in the text stays a blank line.
+ * Greedy word wrap in display cells. A word longer than the line is broken
+ * rather than dropped, and a blank line in the text stays a blank line.
  */
 export function wrapText(text, width) {
-  const limit = Math.max(1, Math.floor(width));
-  const lines = [];
-
-  for (const paragraph of String(text).split("\n")) {
-    let line = "";
-    for (const word of paragraph.split(/\s+/).filter(Boolean)) {
-      let rest = word;
-      while (cols(rest) > limit) {
-        if (line !== "") {
-          lines.push(line);
-          line = "";
-        }
-        const chars = [...rest];
-        let piece = "";
-        for (const char of chars) {
-          if (cols(piece + char) > limit) break;
-          piece += char;
-        }
-        if (piece === "") break;
-        lines.push(piece);
-        rest = chars.slice([...piece].length).join("");
-      }
-      if (rest === "") continue;
-      if (line === "") line = rest;
-      else if (cols(line) + 1 + cols(rest) <= limit) line = `${line} ${rest}`;
-      else {
-        lines.push(line);
-        line = rest;
-      }
-    }
-    lines.push(line);
-  }
-
-  return lines;
+  return wrapByWidth(text, width);
 }

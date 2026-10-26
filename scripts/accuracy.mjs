@@ -10,7 +10,10 @@ import { glyphFor, modeShape } from "../src/mosaic.js";
 const WIDTH = 44;
 const HEIGHT = 22;
 const margin = 1;
-const radiusX = (WIDTH - 2 * margin) / 2;
+// The renderer caps the horizontal radius at `height - 2`, so on a 22-row
+// frame the disc is 40 x 20 cells, not 42 x 21. Using the width-only radius
+// here made the script report a 9.3% error where the real error is under 1%.
+const radiusX = Math.max(2, Math.min((WIDTH - 2 * margin) / 2, HEIGHT - 2));
 const radiusY = radiusX / 2;
 const ideal = Math.PI * radiusX * radiusY;
 

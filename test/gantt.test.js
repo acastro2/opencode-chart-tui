@@ -162,6 +162,112 @@ check("a bar end lands between cells", () => {
   assert.ok(half, `a partial cell closes the bar: ${plan}`);
 });
 
+check("height is a row budget for the whole chart, admission included", () => {
+  const six = {
+    type: "gantt",
+    width: 56,
+    height: 4,
+    tasks: Array.from({ length: 6 }, (_, index) => ({ label: `Task ${index + 1}`, start: index * 2, end: index * 2 + 4 })),
+  };
+  const rows = textRows(renderGanttRows(six));
+  assert.ok(rows.length <= 4, `six tasks fit four rows (${rows.length})`);
+  assert.ok(rows[0].includes("task"), "the scale row is kept");
+  assert.ok(rows.some((row) => row.includes("Task 1")), "the first task is drawn");
+  assert.match(rows.join("\n"), /… 5 more tasks/, "and the cut is counted");
+  const titled = textRows(renderGanttRows({ ...six, title: "Plan" }));
+  assert.ok(titled.length <= 4, `a title is kept inside the budget (${titled.length})`);
+  assert.equal(titled[0], "Plan", "the title is the first row");
+  assert.ok(titled[1].includes("task"), "the scale follows the title");
+  assert.match(titled.join("\n"), /… 6 more tasks/);
+  // A budget just above the fixed rows draws more tasks and shrinks the count.
+  const taller = textRows(renderGanttRows({ ...six, height: 7 }));
+  assert.ok(taller.length <= 7, `seven rows hold seven rows (${taller.length})`);
+  assert.match(taller.join("\n"), /… 2 more tasks/);
+});
+
+check("a long group name is clipped to the chart", () => {
+  const spec = {
+    type: "gantt",
+    width: 24,
+    height: 10,
+    tasks: [
+      { label: "A", group: "Platform reliability and developer experience", start: 0, end: 4 },
+      { label: "B", group: "Platform reliability and developer experience", start: 4, end: 8 },
+    ],
+  };
+  const rows = textRows(renderGanttRows(spec));
+  const legend = rows.filter((row) => row.startsWith("● "));
+  assert.equal(legend.length, 1, "the group has one legend row");
+  for (const row of rows) assert.ok(cols(row) <= 24, `row fits 24 cells (${cols(row)}): ${row}`);
+  assert.equal(cols(legend[0]), 24, "the legend uses the width and stops there");
+  assert.ok(legend[0].endsWith("…"), `clipped with an ellipsis (${legend[0]})`);
+});
+
+check("a CJK label right-aligns on the label column", () => {
+  const spec = {
+    type: "gantt",
+    width: 44,
+    height: 8,
+    tasks: [
+      { label: "设计", start: 0, end: 3 },
+      { label: "构建与测试", start: 3, end: 8 },
+      { label: "上线", at: 10, milestone: true },
+    ],
+  };
+  const rows = textRows(renderGanttRows(spec));
+  for (const label of ["设计", "构建与测试", "上线"]) {
+    const row = rows.find((entry) => entry.includes(label));
+    assert.ok(row, `${label} is drawn`);
+    const separator = row.indexOf("│");
+    const start = cols(row.slice(0, row.indexOf(label)));
+    assert.equal(start + cols(label), cols(row.slice(0, separator)), `${label} ends at the separator`);
+  }
+  for (const row of rows) assert.ok(cols(row) <= 44, `row fits 44 cells (${cols(row)})`);
+});
+
+check("a numeric domain is the data, not zero", () => {
+  const spec = {
+    type: "gantt",
+    width: 60,
+    tasks: [
+      { label: "Phase one", start: 100, end: 140 },
+      { label: "Phase two", start: 140, end: 200 },
+    ],
+  };
+  const { min, max } = normalizeTasks(spec);
+  assert.equal(min, 100, "the earliest value is the left edge");
+  assert.equal(max, 200, "the latest value is the right edge");
+  const rows = textRows(renderGanttRows(spec));
+  const one = cellsOf(rows.find((row) => row.includes("Phase one")));
+  const two = cellsOf(rows.find((row) => row.includes("Phase two")));
+  const left = one.indexOf("│") + 1;
+  // 100 is the domain's start, so the first bar begins in the first plot column.
+  assert.ok("█▌▐".includes(one[left]), `Phase one starts at the left edge (${one[left]})`);
+  assert.ok(!/[█▌▐]/.test(one.slice(0, left)), "and nothing is drawn before it");
+  const right = two.length - 1;
+  assert.ok("█▌▐".includes(two[right]), "Phase two reaches the last plot column");
+  // A numeric spec that wants zero can still ask for it.
+  assert.equal(normalizeTasks({ ...spec, min: 0 }).min, 0);
+});
+
+check("invalid tasks are counted in a note", () => {
+  const spec = {
+    type: "gantt",
+    width: 60,
+    height: 8,
+    tasks: [
+      { label: "ok", start: 1, end: 2 },
+      { label: "bad", start: "nope", end: "nope" },
+      null,
+      { label: "no time" },
+    ],
+  };
+  assert.equal(normalizeTasks(spec).dropped, 3);
+  const text = textRows(renderGanttRows(spec)).join("\n");
+  assert.match(text, /3 tasks omitted \(no usable time\)/);
+  assert.ok(!text.includes("bad"), "the invalid row is not drawn");
+});
+
 check("an empty gantt says so", () => {
   const rows = textRows(renderGanttRows({ width: 40, tasks: [] }));
   assert.ok(rows.some((row) => row.includes("no data")));
@@ -182,6 +288,15 @@ check("every row fits the chart and holds only canvas or text", () => {
       }
     }
   }
+});
+
+check("a typo in the mosaic name falls back instead of throwing", () => {
+  // Every other family reads its mosaic through `modeName`; a typo must not be
+  // the one input that kills the frame inside the TUI measure callback.
+  const rows = renderGanttRows({ ...dated, mosaic: "octants" });
+  assert.ok(rows.length > 0, "the chart still draws");
+  const fallback = renderGanttRows({ ...dated, mosaic: "sextant" });
+  assert.deepEqual(rows.map((row) => row.runs), fallback.map((row) => row.runs), "it draws the default mode");
 });
 
 console.log(`\n${checks}/${checks} checks passed`);

@@ -1,5 +1,14 @@
 import assert from "node:assert/strict";
-import { renderPie, renderPieChart, renderPieRows, layoutPie, normalizeSlices, sliceGlyphs, renderLegend } from "../src/pie.js";
+import {
+  renderPie,
+  renderPieChart,
+  renderChartRows,
+  renderPieRows,
+  layoutPie,
+  normalizeSlices,
+  sliceGlyphs,
+  renderLegend,
+} from "../src/pie.js";
 import { availableModes, glyphFor, isComplete, modeShape } from "../src/mosaic.js";
 
 const WIDTH = 44;
@@ -384,6 +393,105 @@ check("a taller cell flattens the disc", () => {
     const drawnH = bottom - top + 1;
     assert.ok(Math.abs(drawnH * aspect - drawnW) <= 2, `aspect ${aspect}: ${drawnW} wide, ${drawnH} tall`);
   }
+});
+
+check("a chart can read parallel labels and values, with no title or legend", () => {
+  const chart = renderPieChart({ labels: ["Direct", "Channel"], values: [70, 30], legend: false });
+  const lines = chart.split("\n");
+  assert.equal(lines.length, Math.round((48 - 2) / 2) + 2);
+  for (const line of lines) assert.ok(cols(line) <= 48);
+  assert.ok(!chart.includes("Direct"), "the legend is off");
+});
+
+check("values without labels get default names", () => {
+  const chart = renderPieChart({ values: [3, 2], width: 24 });
+  assert.match(chart, /slice 1/);
+  assert.match(chart, /slice 2/);
+});
+
+check("a chart with no values keeps a blank frame", () => {
+  const chart = renderPieChart({ values: [], width: 16 });
+  const lines = chart.split("\n");
+  assert.equal(lines.length, 9);
+  for (const line of lines) assert.equal(line.trim(), "");
+});
+
+check("a donut comes from the type alone", () => {
+  const chart = renderPieChart({ type: "donut", slices: [["Cloud", 44], ["Tools", 56]], width: 30, legend: false });
+  const lines = chart.split("\n");
+  assert.equal(lines.length, 16);
+  assert.equal(cellsOf(lines[7])[14], " ", "the centre stays empty");
+  assert.ok(lines.join("").includes("█"));
+});
+
+check("long labels are dropped and reported, empty labels are not", () => {
+  const dropped = renderPieRows(normalizeSlices([["a", 50], ["b", 50]]), {
+    width: 20,
+    height: 10,
+    labelFormat: () => "0123456789abcdef",
+  });
+  assert.equal(dropped.at(-1).runs.map((run) => run.text).join(""), "2 labels dropped");
+
+  const one = renderPieRows(normalizeSlices([["big", 90], ["tiny", 10]]), {
+    width: 34,
+    height: 16,
+    labelFormat: (slice) => (slice.value === 90 ? "90%" : "a label that cannot fit"),
+  });
+  assert.equal(one.at(-1).runs.map((run) => run.text).join(""), "1 label dropped");
+
+  const blank = layoutPie(normalizeSlices([["a", 50], ["b", 50]]), { width: 34, height: 16, labelFormat: () => "" });
+  assert.equal(blank.labelsDropped, 0);
+  assert.equal(blank.cells.flat().filter((cell) => cell.kind === "label").length, 0);
+});
+
+check("a wide label keeps a continuation cell", () => {
+  const { cells, labelsDropped } = layoutPie(normalizeSlices([["wide", 80], ["rest", 20]]), {
+    width: WIDTH,
+    height: HEIGHT,
+    labelFormat: (slice) => (slice.value === 80 ? "幅" : "20%"),
+  });
+  assert.equal(labelsDropped, 0);
+  assert.ok(cells.flat().some((cell) => cell.cont === true && cell.kind === "label"));
+});
+
+check("monochrome spokes cover horizontal, vertical and both diagonals", () => {
+  const cases = [
+    { values: [5, 6, 89], char: "─" },
+    { values: [5, 41, 54], char: "│" },
+    { values: [5, 36, 59], char: "╲" },
+    { values: [5, 53, 42], char: "╱" },
+  ];
+  for (const { values, char } of cases) {
+    const slices = normalizeSlices(values.map((value, index) => [String(index), value]));
+    const { cells } = layoutPie(slices, { width: WIDTH, height: HEIGHT, mosaic: "octant", spokes: true, labels: false });
+    const spokes = cells.flat().filter((cell) => cell.kind === "spoke");
+    assert.ok(spokes.length > 0, `${values.join("/")} should draw a spoke`);
+    assert.ok(
+      spokes.every((cell) => cell.char === char),
+      `${values.join("/")} should use ${char}, saw ${[...new Set(spokes.map((cell) => cell.char))].join("")}`,
+    );
+    assert.ok(spokes.every((cell) => cell.slice >= 0), "a spoke belongs to the wedge that reaches the rim");
+  }
+});
+
+check("labels can be switched off", () => {
+  const { cells } = layoutPie(normalizeSlices([["a", 60], ["b", 40]]), { width: WIDTH, height: HEIGHT, labels: false });
+  assert.equal(cells.flat().filter((cell) => cell.kind === "label").length, 0);
+});
+
+check("an explicit glyph table replaces the textured fills", () => {
+  const chart = renderPieChart({ slices: [["all", 100]], glyphs: ["▩"], width: 24, legend: false });
+  assert.ok(chart.includes("▩"));
+});
+
+check("styled rows drop the legend on request", () => {
+  const spec = { title: "Spend", slices: [["a", 60], ["b", 40]], width: 30 };
+  const withLegend = renderChartRows(spec);
+  const plain = renderChartRows({ ...spec, plainLegend: true });
+  const none = renderChartRows({ ...spec, legend: false });
+  assert.equal(withLegend.length, plain.length + 2);
+  assert.equal(plain.length, none.length);
+  assert.equal(withLegend[0].runs[0].kind, "title");
 });
 
 console.log(`\n${checks}/${checks} checks passed`);

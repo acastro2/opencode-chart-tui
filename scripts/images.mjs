@@ -1,13 +1,13 @@
 // Pictures for the README: one SVG per family, drawn from the real renderer.
 //
-//   node scripts/images.mjs [width]
+//   node scripts/images.mjs [width] [--theme light]
 //
 // Each image is the chart's own styled runs, drawn as a terminal would draw them
 // but without trusting a font: mosaic and block glyphs become rectangles, so the
 // shapes are exact even where a reader's font has no Unicode 13 character. Text
 // stays text, in a monospace stack.
 //
-// Writes assets/<type>.svg.
+// Writes assets/<type>.svg, or assets/light/<type>.svg with --theme light.
 
 import { mkdirSync, writeFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
@@ -18,8 +18,15 @@ import { availableModes, glyphFor, modeShape } from "../src/mosaic.js";
 import { SAMPLES } from "./samples.mjs";
 
 const here = dirname(fileURLToPath(import.meta.url));
-const out = resolve(here, "..", "assets");
-const width = Number(process.argv[2]) || 76;
+const args = process.argv.slice(2);
+const themeIndex = args.indexOf("--theme");
+const themeName = themeIndex >= 0 && args[themeIndex + 1] === "light" ? "light" : "dark";
+const out = resolve(here, "..", themeName === "dark" ? "assets" : "assets/light");
+const width = Number(args.find((arg) => /^\d+$/.test(arg))) || 76;
+const chrome =
+  themeName === "light"
+    ? { page: "#ffffff", bar: "#f3f4f6", title: "#57606a", fg: "#1f2328" }
+    : { page: "#0b0d10", bar: "#161b22", title: "#8b949e", fg: "#e6edf3" };
 
 const CELL_W = 8;
 const CELL_H = 16;
@@ -93,7 +100,7 @@ function image(name, spec) {
     let x = 0;
     for (const run of row.runs) {
       const style = styleOf(run, palette, theme);
-      const fg = style.fg ?? "#e6edf3";
+      const fg = style.fg ?? chrome.fg;
       for (const char of run.text) {
         const px = PAD + x * CELL_W;
         const py = BAR + y * CELL_H;
@@ -126,11 +133,11 @@ function image(name, spec) {
   });
 
   const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${cols + 2 * PAD}" height="${height + BAR + PAD}" viewBox="0 0 ${cols + 2 * PAD} ${height + BAR + PAD}" font-family="${TEXT}" shape-rendering="crispEdges">
-<rect width="100%" height="100%" rx="10" fill="#0b0d10"/>
-<rect x="0" y="0" width="100%" height="${BAR}" rx="10" fill="#161b22"/>
-<rect x="0" y="${BAR - 10}" width="100%" height="10" fill="#161b22"/>
+<rect width="100%" height="100%" rx="10" fill="${chrome.page}"/>
+<rect x="0" y="0" width="100%" height="${BAR}" rx="10" fill="${chrome.bar}"/>
+<rect x="0" y="${BAR - 10}" width="100%" height="10" fill="${chrome.bar}"/>
 <circle cx="16" cy="${BAR / 2}" r="5" fill="#ff5f57"/><circle cx="34" cy="${BAR / 2}" r="5" fill="#febc2e"/><circle cx="52" cy="${BAR / 2}" r="5" fill="#28c840"/>
-<text x="${(cols + 2 * PAD) / 2}" y="${BAR / 2 + 4}" fill="#8b949e" font-size="12" text-anchor="middle">${escape(name)}</text>
+<text x="${(cols + 2 * PAD) / 2}" y="${BAR / 2 + 4}" fill="${chrome.title}" font-size="12" text-anchor="middle">${escape(name)}</text>
 ${parts.join("\n")}
 </svg>
 `;
@@ -144,7 +151,7 @@ const names = Object.keys(SAMPLES);
 let failed = 0;
 for (const name of names) {
   try {
-    const info = image(name, { ...SAMPLES[name], type: name });
+    const info = image(name, { ...SAMPLES[name], type: name, theme: themeName });
     console.log(
       `  ${name.padEnd(12)} ${String(info.columns).padStart(3)}x${info.rows}  ` +
         `${String(info.shapes).padStart(5)} shapes  ${String(info.letters).padStart(4)} glyphs`,

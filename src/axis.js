@@ -10,15 +10,54 @@
 // citizen: bars grow away from it in both directions and it carries the axis.
 
 import { cols, formatNumber } from "./core.js";
+import { graphemeWidth, graphemes, sliceByWidth } from "./text.js";
+
+// The ladder a scaled value rounds up to. `roundStep` walks it in order, so the
+// first bound at or above the value wins and anything larger is a full decade.
+const ROUND_STEPS = [
+  { limit: 1, step: 1 },
+  { limit: 2, step: 2 },
+  { limit: 2.5, step: 2.5 },
+  { limit: 5, step: 5 },
+];
+
+/** The round step for a scaled value: 0.8 -> 1, 3 -> 5, 7 -> 10. */
+function roundStep(scaled) {
+  const found = ROUND_STEPS.find((entry) => scaled <= entry.limit);
+  return found ? found.step : 10;
+}
 
 /** The next round number at or above the value: 87 -> 100, 230 -> 250, 810 -> 1000. */
 export function niceMax(value) {
   const size = Math.abs(Number(value) || 0);
   if (size <= 0) return 1;
   const magnitude = 10 ** Math.floor(Math.log10(size));
-  const scaled = size / magnitude;
-  const step = scaled <= 1 ? 1 : scaled <= 2 ? 2 : scaled <= 2.5 ? 2.5 : scaled <= 5 ? 5 : 10;
-  return step * magnitude;
+  return roundStep(size / magnitude) * magnitude;
+}
+
+/** The range's ends, with zero pulled in when a zero row is wanted. */
+function spanEnds(min, max, zero) {
+  const low = Number(min) || 0;
+  const high = Number(max) || 0;
+  if (!zero) return { low, high };
+  return { low: Math.min(0, low), high: Math.max(0, high) };
+}
+
+/** A flat series still needs a range to draw in. */
+function padRange(value) {
+  const pad = Math.max(Math.abs(value) * 0.01, 0.5);
+  return { low: value - pad, high: value + pad };
+}
+
+/** The step for a rough gap: the round ladder value times its magnitude. */
+function stepFor(rough) {
+  const magnitude = 10 ** Math.floor(Math.log10(rough));
+  return roundStep(rough / magnitude) * magnitude;
+}
+
+/** An empty chart: zero and only zero, with nowhere to go. */
+function isZeroSpan(low, high, zero) {
+  return zero && low === 0 && high === 0;
 }
 
 /**
@@ -26,25 +65,68 @@ export function niceMax(value) {
  * steps. Returns the step as well, so ticks can be exact multiples of it.
  */
 export function niceBounds(min, max, ticks = 4, zero = true) {
-  const low = zero ? Math.min(0, Number(min) || 0) : Number(min) || 0;
-  const high = zero ? Math.max(0, Number(max) || 0) : Number(max) || 0;
-  if (zero && low === 0 && high === 0) return { low: 0, high: 1, step: 0.25 };
+  const { low, high } = spanEnds(min, max, zero);
+  if (isZeroSpan(low, high, zero)) return { low: 0, high: 1, step: 0.25 };
   if (low === high) {
-    // A flat series still needs a range to draw in, and without zero the range
-    // has to come from the value itself.
-    const pad = Math.max(Math.abs(low) * 0.01, 0.5);
-    return niceBounds(low - pad, high + pad, ticks, false);
+    // Without zero the range has to come from the value itself.
+    const padded = padRange(low);
+    return niceBounds(padded.low, padded.high, ticks, false);
   }
-
-  const rough = (high - low) / Math.max(1, ticks);
-  const magnitude = 10 ** Math.floor(Math.log10(rough));
-  const scaled = rough / magnitude;
-  const step = (scaled <= 1 ? 1 : scaled <= 2 ? 2 : scaled <= 2.5 ? 2.5 : scaled <= 5 ? 5 : 10) * magnitude;
+  const step = stepFor((high - low) / Math.max(1, ticks));
   return {
     low: Math.floor(low / step) * step,
     high: Math.ceil(high / step) * step,
     step,
   };
+}
+
+/** A value clamped to the axis, so a bar cannot grow outside its plot. */
+function clampToAxis(value, low, high) {
+  return Math.max(low, Math.min(Number(value) || 0, high));
+}
+
+/** The cell height of one unit and the row a value lands on. */
+function rowLookup(low, high, rows) {
+  // The cell is the unit, not the gap between two cell centres: a row covers its
+  // own box, so a bar at the top of the axis fills the first row completely
+  // instead of only its lower half.
+  const unit = (high - low || 1) / rows;
+  return {
+    unit,
+    rowOf: (value) => Math.max(0, Math.min(rows - 1, Math.floor((high - clampToAxis(value, low, high)) / unit))),
+  };
+}
+
+/** One mark per step across the range, with the row it lands on. */
+function axisMarks(low, span, step, rowOf) {
+  const count = Math.round(span / step);
+  const marks = [];
+  for (let index = 0; index <= count; index++) {
+    const value = low + index * step;
+    marks.push({ value: Number(value.toFixed(10)), row: rowOf(value), label: formatNumber(value) });
+  }
+  return marks;
+}
+
+/** Zero first, then by value, so a shared row keeps the zero tick. */
+function zeroFirst(a, b) {
+  if (a.value === 0) return -1;
+  if (b.value === 0) return 1;
+  return a.value - b.value;
+}
+
+/** One tick per row; the first mark in order wins a row two marks share. */
+function oneTickPerRow(marks) {
+  const taken = new Map();
+  for (const mark of [...marks].sort(zeroFirst)) {
+    if (!taken.has(mark.row)) taken.set(mark.row, mark);
+  }
+  return [...taken.values()].sort((a, b) => a.row - b.row);
+}
+
+/** The row of the zero crossing, or -1 when the range does not cross zero. */
+function zeroRowOf(low, high, rowOf) {
+  return low <= 0 && high >= 0 ? rowOf(0) : -1;
 }
 
 /**
@@ -57,37 +139,14 @@ export function niceBounds(min, max, ticks = 4, zero = true) {
 export function buildAxis({ min = 0, max, plotRows, ticks = 4, zero = true }) {
   const rows = Math.max(3, Math.floor(plotRows));
   const { low, high, step } = niceBounds(min, max, ticks, zero);
-  const span = high - low || 1;
-  // The cell is the unit, not the gap between two cell centres: a row covers its
-  // own box, so a bar at the top of the axis fills the first row completely
-  // instead of only its lower half.
-  const unit = span / rows;
-
-  const rowOf = (value) => {
-    const clamped = Math.max(low, Math.min(Number(value) || 0, high));
-    return Math.max(0, Math.min(rows - 1, Math.floor((high - clamped) / unit)));
-  };
-
-  const marks = [];
-  const count = Math.round(span / step);
-  for (let index = 0; index <= count; index++) {
-    const value = low + index * step;
-    marks.push({ value: Number(value.toFixed(10)), row: rowOf(value), label: formatNumber(value) });
-  }
-
-  // One tick per row. Zero goes first so the axis line keeps its label, then the
-  // rest from the bottom up.
-  const taken = new Map();
-  for (const mark of [...marks].sort((a, b) => (a.value === 0 ? -1 : b.value === 0 ? 1 : a.value - b.value))) {
-    if (!taken.has(mark.row)) taken.set(mark.row, mark);
-  }
-  const kept = [...taken.values()].sort((a, b) => a.row - b.row);
+  const { unit, rowOf } = rowLookup(low, high, rows);
+  const kept = oneTickPerRow(axisMarks(low, high - low || 1, step, rowOf));
   const labelWidth = Math.max(...kept.map((mark) => cols(mark.label)), 1);
 
   return {
     top: high,
     bottom: low,
-    zeroRow: low <= 0 && high >= 0 ? rowOf(0) : -1,
+    zeroRow: zeroRowOf(low, high, rowOf),
     plotRows: rows,
     height: rows,
     unit,
@@ -145,37 +204,141 @@ export function baseline(axis, axisWidth) {
   };
 }
 
+/** The centre column of a label: where the caller put it, or evenly spread. */
+function labelCentre(index, count, limit, positions) {
+  if (Array.isArray(positions) && Number.isFinite(positions[index])) return positions[index];
+  return ((limit - 1) * index) / Math.max(1, count - 1);
+}
+
+/** A label's left edge: centred on its mark, pulled back inside the row. */
+function centredAt(centre, width, limit) {
+  const at = Math.max(0, Math.round(centre) - Math.floor(width / 2));
+  return Math.min(at, Math.max(0, limit - width));
+}
+
+/** The shifted start that clears the previous label, or -1 when it cannot. */
+function shiftedTo(lastEnd, width, limit) {
+  return lastEnd + 2 + width <= limit ? lastEnd + 2 : -1;
+}
+
+/** The start column that clears the previous label, or -1 when it collides. */
+function clearOf(at, width, lastEnd, limit, shift) {
+  if (at > lastEnd + 1) return at;
+  return shift ? shiftedTo(lastEnd, width, limit) : -1;
+}
+
+/** The start column for a label, or -1 when it cannot be shown. */
+function placeLabel({ index, count, limit, positions, width, lastEnd, shift }) {
+  if (width === 0 || width > limit) return -1;
+  const at = centredAt(labelCentre(index, count, limit, positions), width, limit);
+  return clearOf(at, width, lastEnd, limit, shift);
+}
+
 /**
  * Labels under data points (a line, a candle) rather than under slots (a bar).
  * Each label is centred on its point and dropped when the previous one is still
  * on screen, so a narrow chart thins its labels instead of cutting them down to
  * one letter, which is what a slot-based row would do.
  */
-export function pointLabelRow(labels, columns, positions = null) {
+export function pointLabelLayout(labels, columns, positions = null, options = {}) {
+  const limit = Math.max(0, Math.floor(columns));
   const cells = [];
   let lastEnd = -2;
+  let dropped = 0;
 
   for (const [index, text] of labels.entries()) {
-    // A slot family (bars, candles, waterfall steps) tells us where its centre
-    // is; otherwise the points are spread evenly across the row.
-    const centre =
-      Array.isArray(positions) && Number.isFinite(positions[index])
-        ? positions[index]
-        : ((columns - 1) * index) / Math.max(1, labels.length - 1);
-    const at = Math.max(0, Math.round(centre) - Math.floor(cols(text) / 2));
-    if (at <= lastEnd + 1) continue;
-    // The label is already the whole label: a point label is thinned, never cut.
-    const value = String(text);
-    if (at + cols(value) > columns) continue;
-    let cursor = at;
-    while (cells.length < cursor) cells.push(" ");
-    for (const char of value) cells[cursor++] = char;
-    lastEnd = cursor - 1;
+    const value = String(text ?? "");
+    const width = cols(value);
+    const at = placeLabel({
+      index,
+      count: labels.length,
+      limit,
+      positions,
+      width,
+      lastEnd,
+      shift: options.shift === true,
+    });
+    if (at < 0) {
+      dropped += 1;
+      continue;
+    }
+    writeAt(cells, at, value, limit);
+    lastEnd = at + width - 1;
   }
 
-  // Slicing the array of code points, not the string, so a wide glyph is never
-  // cut in half.
-  return cells.slice(0, Math.max(0, columns)).join("");
+  return { text: paddedRow(cells, limit).join(""), dropped };
+}
+
+/** The plain label row; the layout carries the dropped count when it matters. */
+export function pointLabelRow(labels, columns, positions = null, options = {}) {
+  return pointLabelLayout(labels, columns, positions, options).text;
+}
+
+/** A zero-width mark hangs off the cell before the label start. */
+function attachMark(cells, cursor, at, grapheme) {
+  if (cursor > at) cells[cursor - 1] += grapheme;
+  return cursor;
+}
+
+/** Where the cursor lands after one grapheme, or -1 when it crosses the edge. */
+function advance(cells, cursor, at, grapheme, width, limit) {
+  if (width === 0) return attachMark(cells, cursor, at, grapheme);
+  if (cursor + width > limit) return -1;
+  cells[cursor] = grapheme;
+  if (width === 2) cells[cursor + 1] = "";
+  return cursor + width;
+}
+
+/** Write one label into a row of cell strings, leaving a gap after a wide glyph. */
+function writeAt(cells, at, value, limit) {
+  while (cells.length < at) cells.push(" ");
+  let cursor = at;
+  for (const grapheme of graphemes(value)) {
+    const next = advance(cells, cursor, at, grapheme, graphemeWidth(grapheme), limit);
+    if (next < 0) break;
+    cursor = next;
+  }
+  return cursor;
+}
+
+/** A cell row padded to the full width, still as cells. */
+function paddedRow(cells, limit) {
+  while (cells.length < limit) cells.push(" ");
+  return cells.slice(0, limit);
+}
+
+/** The first column of a category slot. */
+function slotStart(index, { groupWidth, gap, slotOffset }) {
+  return index * (groupWidth + gap) + slotOffset;
+}
+
+/** A slot is free when it starts after the previous label and inside the row. */
+function slotFree(start, limit, lastEnd) {
+  return start > lastEnd + 1 && start < limit;
+}
+
+/** A label cut to its slot in cells, not UTF-16 units and not code points. */
+function slotText(raw, groupWidth) {
+  return sliceByWidth(String(raw ?? ""), Math.max(1, groupWidth));
+}
+
+/** The centred label for one slot, clipped at the row's edge, or null. */
+function fitCategory(text, start, { groupWidth, limit }) {
+  const width = cols(text);
+  const at = start + Math.max(0, Math.floor((groupWidth - width) / 2));
+  if (at >= limit) return null;
+  if (at + width <= limit) return { text, at };
+  const cut = sliceByWidth(text, limit - at);
+  return cut ? { text: cut, at } : null;
+}
+
+/** The label and start column for one slot, or null when it cannot be shown. */
+function placeCategoryLabel(raw, index, slot) {
+  const start = slotStart(index, slot);
+  if (!slotFree(start, slot.limit, slot.lastEnd)) return null;
+  const text = slotText(raw, slot.groupWidth);
+  if (!text) return null;
+  return fitCategory(text, start, slot);
 }
 
 /**
@@ -183,20 +346,16 @@ export function pointLabelRow(labels, columns, positions = null) {
  * its slot only when it fits the slot and does not run into the previous one.
  */
 export function categoryRow(labels, { groupWidth, gap, width, slotOffset = 0 }) {
+  const limit = Math.max(0, Math.floor(width));
+  const slot = { groupWidth, gap, limit, slotOffset, lastEnd: -2 };
   const cells = [];
-  let lastEnd = -2;
 
   for (const [index, raw] of labels.entries()) {
-    const start = index * (groupWidth + gap) + slotOffset;
-    if (start <= lastEnd + 1) continue;
-    const text = String(raw).slice(0, Math.max(1, groupWidth));
-    if (!text) continue;
-    const at = start + Math.max(0, Math.floor((groupWidth - cols(text)) / 2));
-    while (cells.length < at) cells.push(" ");
-    let cursor = at;
-    for (const char of text) cells[cursor++] = char;
-    lastEnd = cursor - 1;
+    const placed = placeCategoryLabel(raw, index, slot);
+    if (!placed) continue;
+    writeAt(cells, placed.at, placed.text, limit);
+    slot.lastEnd = placed.at + cols(placed.text) - 1;
   }
 
-  return cells.join("").slice(0, Math.max(0, width));
+  return paddedRow(cells, limit).join("");
 }

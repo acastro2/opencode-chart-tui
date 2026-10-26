@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { cols, runsText } from "../src/core.js";
+import { renderChartRows } from "../src/chart.js";
 import { bin, binCount, binLabels, renderHistogramRows } from "../src/histogram.js";
 
 let checks = 0;
@@ -103,6 +104,61 @@ check("bin labels are thinned, never cut to one letter", () => {
   for (const token of tokens) {
     assert.ok(token.length >= 2, `"${token}" is a whole label, not a cut fragment`);
   }
+});
+
+check("bin ranges replace the left edges when the whole row fits", () => {
+  const values = Array.from({ length: 120 }, (_, index) => (index * 7919) % 500);
+  const spec = { type: "histogram", width: 56, height: 8, values, bins: 6 };
+  const rows = textRows(renderHistogramRows(spec));
+  const labelRow = rows[rows.findIndex((row) => row.includes("values,")) - 1];
+  for (const label of binLabels(bin(values, 6).bins)) {
+    assert.ok(labelRow.includes(label), `"${label}" is shown: "${labelRow}"`);
+  }
+  for (const row of rows) assert.ok(cols(row) <= spec.width, `"${row}" is ${cols(row)} of ${spec.width}`);
+});
+
+check("a narrow histogram falls back to left edges and still fits", () => {
+  const values = Array.from({ length: 120 }, (_, index) => (index * 7919) % 500);
+  const spec = { type: "histogram", width: 16, height: 8, values, bins: 6 };
+  const rows = textRows(renderHistogramRows(spec));
+  for (const row of rows) assert.ok(cols(row) <= spec.width, `"${row}" is ${cols(row)} of ${spec.width}`);
+  const labelRow = rows[rows.findIndex((row) => row.includes("values,")) - 1];
+  assert.ok(labelRow.trim().length > 0, `at least one label survives: "${labelRow}"`);
+  assert.ok(!labelRow.includes("–"), `the ranges do not fit, so the edges stay: "${labelRow}"`);
+});
+
+check("a histogram reserves the hidden-bin row inside its height", () => {
+  // 60 bins cannot fit 40 columns, so the bar layout has to hide most of them
+  // and say so. That note is a row: the histogram has to budget it before it
+  // hands the plot height over, or the block is one row too tall.
+  const values = Array.from({ length: 120 }, (_, index) => (index * 7919) % 100);
+  const spec = { type: "histogram", width: 40, height: 12, bins: 60, values };
+  const rows = textRows(renderHistogramRows(spec));
+  assert.equal(rows.length, 12, `the block is exactly ${spec.height} rows (${rows.length})`);
+  assert.match(rows[rows.length - 2], /categories hidden/, "the hidden bins are named before the footer");
+  assert.match(rows[rows.length - 1], /values,/, "the histogram footer is still the last row");
+  for (const row of rows) assert.ok(cols(row) <= spec.width, `"${row}" is ${cols(row)} of ${spec.width}`);
+});
+
+check("a titled histogram keeps title, plot, note and footer inside height", () => {
+  const values = Array.from({ length: 120 }, (_, index) => (index * 7919) % 100);
+  const spec = { type: "histogram", width: 40, height: 12, bins: 60, title: "Sizes", values };
+  const rows = textRows(renderHistogramRows(spec));
+  assert.equal(rows.length, 12, `the block is exactly ${spec.height} rows (${rows.length})`);
+  assert.equal(rows[0], "Sizes");
+  assert.match(rows[rows.length - 2], /categories hidden/);
+});
+
+check("the generic height guard never has to replace the histogram's note", () => {
+  // The repro through the real entry point: at height 12 the guard used to trim
+  // the hidden-category note and print "1 row hidden at height 12" instead.
+  const values = Array.from({ length: 120 }, (_, index) => (index * 7919) % 100);
+  const spec = { type: "histogram", width: 40, height: 12, bins: 60, values };
+  const rows = renderChartRows(spec);
+  const text = textRows(rows).join("\n");
+  assert.equal(rows.length, 12, `the block is exactly ${spec.height} rows (${rows.length})`);
+  assert.match(text, /categories hidden/, "the hidden-category note is the visible row");
+  assert.doesNotMatch(text, /row hidden at height/, "the generic guard did not fire");
 });
 
 check("an empty histogram says so", () => {

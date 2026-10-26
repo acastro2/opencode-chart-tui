@@ -30,6 +30,7 @@ import {
   DEFAULT_PALETTE,
   SOLID,
   SPOKE,
+  blankGrid,
   cellsToRuns,
   cols,
   contrastOn,
@@ -45,6 +46,8 @@ import {
   truncate,
   winnerOf,
 } from "./core.js";
+import { graphemeWidth, graphemes } from "./text.js";
+import { plotRows as plotRowsFor } from "./layout.js";
 
 // Re-exported so the plugin and the tests can keep importing from this file.
 export {
@@ -55,6 +58,246 @@ export {
   sliceGlyphs,
   normalizeEntries as normalizeSlices,
 } from "./core.js";
+
+const TAU = Math.PI * 2;
+
+// --- Geometry -------------------------------------------------------------
+
+/** Width in cells, never narrower than a readable disc. */
+function pieWidth(options) {
+  return Math.max(5, Math.floor(options.width ?? 48));
+}
+
+/** Margin in cells, clamped so a chart cannot ask for a negative or huge one. */
+function pieMargin(options) {
+  return Math.max(0, Math.min(3, Math.floor(options.margin ?? 1)));
+}
+
+function pieAspect(options) {
+  return Number(options.cellAspect) > 0 ? Number(options.cellAspect) : 2;
+}
+
+/** A wide frame gets a wide *chart*, not a 70-row disc. */
+function pieHeight(options, width, margin, aspect) {
+  const fallback = Math.min(28, Math.round((width - 2 * margin) / aspect) + 2);
+  return Math.max(3, Math.floor(options.height ?? fallback));
+}
+
+function pieRadiusX(width, margin, height) {
+  return Math.max(2, Math.min((width - 2 * margin) / 2, height - 2));
+}
+
+/**
+ * Everything the shape needs, computed once. `radiusY` is the horizontal radius
+ * over the cell aspect: a cell is twice as tall as it is wide, so the vertical
+ * radius is half the horizontal one and the rim looks round.
+ */
+function discGeometry(options) {
+  const width = pieWidth(options);
+  const margin = pieMargin(options);
+  const aspect = pieAspect(options);
+  const height = pieHeight(options, width, margin, aspect);
+  const radiusX = pieRadiusX(width, margin, height);
+  return {
+    width,
+    height,
+    radiusX,
+    radiusY: radiusX / aspect,
+    centerX: (width - 1) / 2,
+    centerY: (height - 1) / 2,
+    inner: options.donut ? 0.45 : 0,
+  };
+}
+
+/** True outside the rim or inside the donut hole: no wedge owns the point. */
+function distanceOutside(dx, dy, inner) {
+  const distance = Math.hypot(dx, dy);
+  return distance > 1 || (inner > 0 && distance < inner);
+}
+
+/** Angle from twelve o'clock, clockwise, so slices read left to right. */
+function clockwiseAngle(dx, dy) {
+  const angle = Math.atan2(dx, -dy);
+  return angle < 0 ? angle + TAU : angle;
+}
+
+/** Index of the first cumulative bound this fraction falls under. */
+function firstBound(bounds, fraction) {
+  for (const [index, bound] of bounds.entries()) {
+    if (fraction < bound) return index;
+  }
+  return -1;
+}
+
+/** Which slice owns a point, or -1 outside the disc and its hole. */
+function sliceAtFor(bounds, count, geometry) {
+  return (x, y) => {
+    const dx = (x - geometry.centerX) / geometry.radiusX;
+    const dy = (y - geometry.centerY) / geometry.radiusY;
+    if (distanceOutside(dx, dy, geometry.inner)) return -1;
+    const index = firstBound(bounds, clockwiseAngle(dx, dy) / TAU);
+    return index < 0 ? count - 1 : index;
+  };
+}
+
+// --- The hole -------------------------------------------------------------
+
+/** One sub-cell's centre, in units of the horizontal radius. */
+function subCellPoint(x, y, row, column, shape, geometry) {
+  const dx = (x + (column + 0.5 - shape.columns / 2) / shape.columns - geometry.centerX) / geometry.radiusX;
+  const dy = (y + (row + 0.5 - shape.rows / 2) / shape.rows - geometry.centerY) / geometry.radiusY;
+  return { dx, dy };
+}
+
+/** The sub-cell's bit when it falls inside the hole, else 0. */
+function holeBit(x, y, row, column, shape, geometry) {
+  const { dx, dy } = subCellPoint(x, y, row, column, shape, geometry);
+  return Math.hypot(dx, dy) < geometry.inner ? 1 << (row * shape.columns + column) : 0;
+}
+
+/**
+ * The hole is a boundary like the outer rim, so it gets its own sub-cell mask:
+ * the sampler only reports owned slices, and stopping the fill at a whole cell
+ * leaves the soft staircase the rim no longer has.
+ */
+function holeMask(sampler, x, y, geometry) {
+  if (!(geometry.inner > 0)) return 0;
+  const { shape } = sampler;
+  let hole = 0;
+  for (let row = 0; row < shape.rows; row++) {
+    for (let column = 0; column < shape.columns; column++) {
+      hole |= holeBit(x, y, row, column, shape, geometry);
+    }
+  }
+  return hole;
+}
+
+// --- Cells ----------------------------------------------------------------
+
+function insideCount(tally) {
+  let inside = 0;
+  for (const count of tally.values()) inside += count;
+  return inside;
+}
+
+function boundaryOf(sample, winner) {
+  return sample.masks.get(winner) ?? 0;
+}
+
+function holeCell(sample, winner, sampler) {
+  // The hole is drawn by omission, like the outside of the rim: the wedge's
+  // sub-cells carry the colour and the hole's own sub-cells stay unpainted, so
+  // no dark tick lands on the ring.
+  return { slice: winner, other: -1, char: glyphFor(sample.mask, sampler.mosaic), kind: "fill", mask: sample.mask };
+}
+
+function boundaryCell(sample, winner, sampler, spokeAt, x, y) {
+  // A boundary runs through this cell, so the cell carries both wedges at
+  // once: its glyph fills the winning wedge's sub-cells and the cell background
+  // shows the other wedge behind them.
+  const other = secondIndex(sample.tally, winner);
+  if (sample.mask === sampler.solidMask) {
+    return { slice: winner, other, char: sampler.glyph(boundaryOf(sample, winner)), kind: "edge", mask: sample.mask };
+  }
+  if (spokeAt) {
+    return { slice: winner, other, char: spokeAt(x, y), kind: "spoke", mask: sample.mask };
+  }
+  // At the rim a background colour would paint the sub-cells outside the disc,
+  // and a dark boundary glyph would leave ticks on the shape. The winner fills
+  // every owned sub-cell instead: the rim stays clean, and the neighbour's few
+  // sub-cells inside are absorbed by the majority that already owns the cell.
+  return { slice: winner, other, char: glyphFor(sample.mask, sampler.mosaic), kind: "fill", mask: sample.mask };
+}
+
+function fillCell(sample, winner, sampler, glyphs) {
+  return { slice: winner, char: sampler.glyph(sample.mask, glyphs[winner]), kind: "fill", mask: sample.mask };
+}
+
+/** One cell of the disc, or null when not enough sub-cells fall inside it. */
+function pieCell(x, y, sampler, sliceAt, geometry, glyphs, spokeAt) {
+  const sample = sampler.sample(x, y, sliceAt);
+  if (insideCount(sample.tally) < sampler.minimum) return null;
+  const winner = winnerOf(sample.tally);
+  if (holeMask(sampler, x, y, geometry) !== 0) return holeCell(sample, winner, sampler);
+  if (boundaryOf(sample, winner) !== sample.mask) return boundaryCell(sample, winner, sampler, spokeAt, x, y);
+  return fillCell(sample, winner, sampler, glyphs);
+}
+
+function paintPieCells(cells, sampler, sliceAt, geometry, glyphs, spokeAt) {
+  for (let y = 0; y < cells.length; y++) {
+    for (let x = 0; x < cells[y].length; x++) {
+      const cell = pieCell(x, y, sampler, sliceAt, geometry, glyphs, spokeAt);
+      if (cell) cells[y][x] = cell;
+    }
+  }
+}
+
+// --- Spokes ---------------------------------------------------------------
+
+function angleStep(angle, radiusX, radiusY) {
+  return { x: Math.sin(angle) * radiusX, y: -Math.cos(angle) * radiusY };
+}
+
+/**
+ * The line character for a boundary at this angle: nearly horizontal, nearly
+ * vertical, or one of the two diagonals by the sign of the step.
+ */
+function spokeChar(angle, radiusX, radiusY) {
+  const step = angleStep(angle, radiusX, radiusY);
+  const horizontal = Math.abs(step.x) >= Math.abs(step.y) * 1.6;
+  const vertical = Math.abs(step.y) >= Math.abs(step.x) * 1.6;
+  if (horizontal) return SPOKE.horizontal;
+  if (vertical) return SPOKE.vertical;
+  return step.x * step.y > 0 ? SPOKE.downRight : SPOKE.upRight;
+}
+
+function spokeCharsFor(bounds, radiusX, radiusY) {
+  return bounds.slice(0, -1).map((bound) => spokeChar(bound * TAU, radiusX, radiusY));
+}
+
+function angleDelta(angle, bound) {
+  const delta = Math.abs(angle - bound * TAU);
+  return delta > Math.PI ? TAU - delta : delta;
+}
+
+/** A lookup from a cell to the spoke glyph of the nearest wedge boundary. */
+function spokeAtFor(bounds, chars, geometry) {
+  const { centerX, centerY, radiusX, radiusY } = geometry;
+  return (x, y) => {
+    const angle = clockwiseAngle((x - centerX) / radiusX, (y - centerY) / radiusY);
+    let nearest = 0;
+    let closest = Infinity;
+    for (const [index, bound] of bounds.slice(0, -1).entries()) {
+      const delta = angleDelta(angle, bound);
+      if (delta < closest) {
+        closest = delta;
+        nearest = index;
+      }
+    }
+    return chars[nearest];
+  };
+}
+
+/** Null unless the caller asked for drawn spokes. */
+function makeSpokeAt(options, bounds, geometry) {
+  if (!options.spokes) return null;
+  return spokeAtFor(bounds, spokeCharsFor(bounds, geometry.radiusX, geometry.radiusY), geometry);
+}
+
+// --- Layout ---------------------------------------------------------------
+
+function pieGlyphs(options, slices) {
+  return options.glyphs ?? (options.textured ? seriesGlyphs(slices.length) : slices.map(() => SOLID));
+}
+
+function pieBounds(slices) {
+  return cumulativeFractions(slices.map((slice) => slice.value));
+}
+
+/** True when this layout should stamp percentage labels into the wedges. */
+function wantsLabels(options, slices) {
+  return options.labels !== false && slices.length > 1;
+}
 
 /**
  * Compute the disc once: which slice owns each cell, which cells carry the
@@ -70,183 +313,115 @@ export {
  *   background spills outside the disc and no dark tick lands on the shape.
  */
 export function layoutPie(slices, options = {}) {
-  const width = Math.max(5, Math.floor(options.width ?? 48));
-  const margin = Math.max(0, Math.min(3, Math.floor(options.margin ?? 1)));
-
-  // A round shape has a height of its own: without this cap a very wide frame
-  // (the terminal is 140 columns, the fence says nothing) would ask for a 70-row
-  // disc. The disc keeps the aspect ratio and centres itself in the width.
-  const aspect = Number(options.cellAspect) > 0 ? Number(options.cellAspect) : 2;
-  const height = Math.max(3, Math.floor(options.height ?? Math.min(28, Math.round((width - 2 * margin) / aspect) + 2)));
-  const radiusX = Math.max(2, Math.min((width - 2 * margin) / 2, height - 2));
-  // The vertical radius is half the horizontal one: that ratio is the aspect
-  // correction that makes the rim round on screen.
-  const radiusY = radiusX / aspect;
-
-  const cells = Array.from({ length: height }, () =>
-    Array.from({ length: width }, () => ({ slice: -1, char: BLANK, kind: "outside", mask: 0 })),
-  );
+  const geometry = discGeometry(options);
+  const { width, height } = geometry;
+  const cells = blankGrid(width, height);
 
   if (slices.length === 0) return { width, height, cells };
 
-  const glyphs = options.glyphs ?? (options.textured ? seriesGlyphs(slices.length) : slices.map(() => SOLID));
-  const bounds = cumulativeFractions(slices.map((slice) => slice.value));
-  const inner = options.donut ? 0.45 : 0;
-  const centerX = (width - 1) / 2;
-  const centerY = (height - 1) / 2;
-
-  const sliceAt = (x, y) => {
-    const dx = (x - centerX) / radiusX;
-    const dy = (y - centerY) / radiusY;
-    const distance = Math.hypot(dx, dy);
-    if (distance > 1 || (inner > 0 && distance < inner)) return -1;
-
-    // Angle from twelve o'clock, clockwise, so slices read left to right.
-    let angle = Math.atan2(dx, -dy);
-    if (angle < 0) angle += Math.PI * 2;
-
-    const fraction = angle / (Math.PI * 2);
-    const index = bounds.findIndex((bound) => fraction < bound);
-    return index < 0 ? slices.length - 1 : index;
-  };
-
+  const glyphs = pieGlyphs(options, slices);
+  const bounds = pieBounds(slices);
+  const sliceAt = sliceAtFor(bounds, slices.length, geometry);
   const sampler = makeSampler(options.mosaic);
+  paintPieCells(cells, sampler, sliceAt, geometry, glyphs, makeSpokeAt(options, bounds, geometry));
 
-  // Monochrome callers can ask for drawn spokes: one line character per cell
-  // that the boundary passes through.
-  const spokeChars = bounds.slice(0, -1).map((bound) => {
-    const angle = bound * Math.PI * 2;
-    const stepX = Math.sin(angle) * radiusX;
-    const stepY = -Math.cos(angle) * radiusY;
-    const horizontal = Math.abs(stepX) >= Math.abs(stepY) * 1.6;
-    const vertical = Math.abs(stepY) >= Math.abs(stepX) * 1.6;
-    return horizontal
-      ? SPOKE.horizontal
-      : vertical
-        ? SPOKE.vertical
-        : stepX * stepY > 0
-          ? SPOKE.downRight
-          : SPOKE.upRight;
-  });
+  const labelsDropped = wantsLabels(options, slices) ? stampLabels(cells, slices, options) : 0;
+  return { width, height, cells, labelsDropped };
+}
 
-  const spokeNear = (x, y) => {
-    const dx = (x - centerX) / radiusX;
-    const dy = (y - centerY) / radiusY;
-    let angle = Math.atan2(dx, -dy);
-    if (angle < 0) angle += Math.PI * 2;
-    let nearest = 0;
-    let closest = Infinity;
-    for (const [index, bound] of bounds.slice(0, -1).entries()) {
-      let delta = Math.abs(angle - bound * Math.PI * 2);
-      if (delta > Math.PI) delta = Math.PI * 2 - delta;
-      if (delta < closest) {
-        closest = delta;
-        nearest = index;
-      }
+// --- Labels ---------------------------------------------------------------
+
+function labelText(slice, total, options) {
+  return options.labelFormat ? options.labelFormat(slice, total) : `${Math.round((slice.value / total) * 100)}%`;
+}
+
+function labelWidth(label) {
+  return label ? cols(label) : 0;
+}
+
+function isOwned(cell, index) {
+  return cell.slice === index && cell.kind === "fill";
+}
+
+/** Every run of fully owned cells in one row, left to right. */
+function ownedRuns(row, index) {
+  const runs = [];
+  let start = -1;
+  for (let x = 0; x <= row.length; x++) {
+    const mine = x < row.length && isOwned(row[x], index);
+    if (mine === (start >= 0)) continue;
+    if (mine) {
+      start = x;
+      continue;
     }
-    return spokeChars[nearest];
-  };
+    runs.push({ start, length: x - start });
+    start = -1;
+  }
+  return runs;
+}
 
-  for (let y = 0; y < height; y++) {
-    for (let x = 0; x < width; x++) {
-      const { mask, tally, masks } = sampler.sample(x, y, sliceAt);
+/** The longer of two runs; ties keep the first one found. */
+function longerRun(best, run) {
+  return !best || run.length > best.length ? run : best;
+}
 
-      let inside = 0;
-      for (const count of tally.values()) inside += count;
-      if (inside < sampler.minimum) continue;
-
-      const winner = winnerOf(tally);
-
-      // The hole is a boundary like the outer rim, so it gets its own sub-cell
-      // mask: the sampler only reports owned slices, and stopping the fill at a
-      // whole cell leaves the soft staircase the rim no longer has.
-      const shape = sampler.shape;
-      let hole = 0;
-      if (inner > 0) {
-        for (let row = 0; row < shape.rows; row++) {
-          for (let column = 0; column < shape.columns; column++) {
-            const dx = (x + (column + 0.5 - shape.columns / 2) / shape.columns - centerX) / radiusX;
-            const dy = (y + (row + 0.5 - shape.rows / 2) / shape.rows - centerY) / radiusY;
-            if (Math.hypot(dx, dy) < inner) hole |= 1 << (row * shape.columns + column);
-          }
-        }
-      }
-      if (hole !== 0) {
-        // The hole is drawn by omission, like the outside of the rim: the
-        // wedge's sub-cells carry the colour and the hole's own sub-cells stay
-        // unpainted, so no dark tick lands on the ring.
-        cells[y][x] = { slice: winner, other: -1, char: glyphFor(mask, sampler.mosaic), kind: "fill", mask };
-        continue;
-      }
-
-      // A boundary runs through this cell, so the cell carries both wedges at
-      // once: its glyph fills the winning wedge's sub-cells and the cell
-      // background shows the other wedge behind them. The boundary sits on the
-      // sub-cell curve, at the same resolution as the rim, and costs no cell.
-      const winnerMask = masks.get(winner) ?? 0;
-      if (winnerMask !== mask) {
-        const other = secondIndex(tally, winner);
-        if (mask === sampler.solidMask) {
-          cells[y][x] = { slice: winner, other, char: sampler.glyph(winnerMask), kind: "edge", mask };
-        } else {
-          // At the rim a background colour would paint the sub-cells outside the
-          // disc, and a dark boundary glyph would leave ticks on the shape. The
-          // winner fills every owned sub-cell instead: the rim stays clean, and
-          // the neighbour's few sub-cells inside are absorbed by the majority
-          // that already owns the cell.
-          cells[y][x] = {
-            slice: winner,
-            other,
-            char: options.spokes ? spokeNear(x, y) : glyphFor(mask, sampler.mosaic),
-            kind: options.spokes ? "spoke" : "fill",
-            mask,
-          };
-        }
-        continue;
-      }
-
-      cells[y][x] = { slice: winner, char: sampler.glyph(mask, glyphs[winner]), kind: "fill", mask };
+/** The widest run of this slice's cells across the whole grid. */
+function widestRun(cells, index) {
+  let best = null;
+  for (let y = 0; y < cells.length; y++) {
+    for (const run of ownedRuns(cells[y], index)) {
+      best = longerRun(best, { ...run, y });
     }
   }
+  return best;
+}
 
-  if (options.labels !== false && slices.length > 1) {
-    stampLabels(cells, slices, options);
+function labelFits(best, length) {
+  return best !== null && best.length >= length + 2;
+}
+
+/** Write the label into its run; returns the cursor after the last glyph. */
+function stampRun(cells, index, best, label, from) {
+  const end = best.start + best.length;
+  let cursor = from;
+  for (const glyph of graphemes(label)) {
+    const cellsWide = graphemeWidth(glyph);
+    if (cursor + cellsWide > end) break;
+    cells[best.y][cursor] = { slice: index, char: glyph, kind: "label" };
+    if (cellsWide === 2) {
+      cells[best.y][cursor + 1] = { slice: index, char: "", kind: "label", cont: true };
+    }
+    cursor += cellsWide;
   }
+  return cursor;
+}
 
-  return { width, height, cells };
+/** Stamp one slice's label; 0 when it fits, 1 when it is dropped. */
+function stampSlice(cells, index, slice, total, options) {
+  const label = labelText(slice, total, options);
+  const length = labelWidth(label);
+  if (length === 0) return 0;
+  const best = widestRun(cells, index);
+  if (!labelFits(best, length)) return 1;
+  // Only a fully owned cell can carry the label. An "edge" cell belongs to two
+  // wedges, so writing there would erase the boundary.
+  const from = best.start + Math.floor((best.length - length) / 2);
+  const cursor = stampRun(cells, index, best, label, from);
+  return cursor < from + length ? 1 : 0;
+}
+
+function sliceTotal(slices) {
+  return slices.reduce((sum, slice) => sum + slice.value, 0);
 }
 
 /** Percentage inside the widest run of each wedge, when there is room. */
 function stampLabels(cells, slices, options) {
-  const total = slices.reduce((sum, slice) => sum + slice.value, 0);
-  const height = cells.length;
-  const width = cells[0].length;
-
+  const total = sliceTotal(slices);
+  let dropped = 0;
   for (const [index, slice] of slices.entries()) {
-    const label = options.labelFormat ? options.labelFormat(slice, total) : `${Math.round((slice.value / total) * 100)}%`;
-    const length = cols(label);
-    let best = null;
-
-    for (let y = 0; y < height; y++) {
-      let start = -1;
-      for (let x = 0; x <= width; x++) {
-        const mine = x < width && cells[y][x].slice === index && cells[y][x].kind !== "spoke";
-        if (mine && start < 0) start = x;
-        if (!mine && start >= 0) {
-          const run = x - start;
-          if (!best || run > best.length) best = { y, start, length: run };
-          start = -1;
-        }
-      }
-    }
-
-    if (!best || best.length < length + 2) continue;
-    const from = best.start + Math.floor((best.length - length) / 2);
-    const glyphs = [...label];
-    for (let offset = 0; offset < length; offset++) {
-      cells[best.y][from + offset] = { slice: index, char: glyphs[offset], kind: "label" };
-    }
+    dropped += stampSlice(cells, index, slice, total, options);
   }
+  return dropped;
 }
 
 /** Plain text rows. No colour, so the drawn boundary and the labels carry the meaning. */
@@ -261,8 +436,16 @@ export function renderPie(slices, options = {}) {
  * second wedge in `other`, to be painted as the background of the run.
  */
 export function renderPieRows(slices, options = {}) {
-  const { width, cells } = layoutPie(slices, options);
-  return cells.map((row) => ({ width, runs: cellsToRuns(row) }));
+  const { width, cells, labelsDropped } = layoutPie(slices, options);
+  const rows = cells.map((row) => ({ width, runs: cellsToRuns(row) }));
+  if (labelsDropped > 0) {
+    const label = labelsDropped === 1 ? "label" : "labels";
+    rows.push({
+      width,
+      runs: [{ text: truncate(`${labelsDropped} ${label} dropped`, width), slice: -1, kind: "legend" }],
+    });
+  }
+  return rows;
 }
 
 /** Legend rows, one slice per line, aligned on the label and the value. */
@@ -276,12 +459,18 @@ function resolveGlyphs(spec, slices) {
 }
 
 function discHeight(spec, width, margin) {
-  if (spec.height != null) return Math.max(3, Math.floor(spec.height));
   const aspect = Number(spec.cellAspect) > 0 ? Number(spec.cellAspect) : 2;
   const radiusX = Math.max(2, (width - 2 * margin) / 2);
   // The same cap layoutPie applies: a wide frame gets a wide *chart*, not a
   // 70-row disc.
-  return Math.max(3, Math.min(28, Math.round((2 * radiusX) / aspect) + 2));
+  const fallback = Math.max(3, Math.min(28, Math.round((2 * radiusX) / aspect) + 2));
+  const legendRows = spec.legend === false || spec.plainLegend === true ? 0 : readSlices(spec).length;
+  return plotRowsFor(spec, {
+    chrome: (spec.title ? 1 : 0) + legendRows,
+    fallback,
+    min: 3,
+    max: 28,
+  });
 }
 
 export function isDonut(spec) {
@@ -299,20 +488,43 @@ function readSlices(spec) {
   return normalizeEntries(values.map((value, index) => [spec.labels?.[index] ?? `slice ${index + 1}`, value]));
 }
 
+// --- Chart wrappers -------------------------------------------------------
+
+function chartWidth(spec) {
+  return Math.max(16, Math.floor(spec.width ?? 48));
+}
+
+function chartMargin(spec) {
+  return Math.max(0, Math.min(3, Math.floor(spec.margin ?? 1)));
+}
+
+function titleLine(title, width) {
+  return truncate(title, width) + BLANK.repeat(Math.max(0, width - cols(title)));
+}
+
+function hasLegend(spec, slices) {
+  return spec.legend !== false && slices.length > 0;
+}
+
+function hasRowLegend(spec, slices) {
+  return spec.legend !== false && slices.length > 0 && spec.plainLegend !== true;
+}
+
 export function renderPieChart(spec) {
-  const width = Math.max(16, Math.floor(spec.width ?? 48));
-  const margin = Math.max(0, Math.min(3, Math.floor(spec.margin ?? 1)));
+  const width = chartWidth(spec);
+  const margin = chartMargin(spec);
   const slices = readSlices(spec);
+  const glyphs = resolveGlyphs(spec, slices);
 
   const lines = [];
-  if (spec.title) lines.push(truncate(spec.title, width) + BLANK.repeat(Math.max(0, width - cols(spec.title))));
+  if (spec.title) lines.push(titleLine(spec.title, width));
 
   lines.push(
     ...renderPie(slices, {
       width,
       height: discHeight(spec, width, margin),
       margin,
-      glyphs: resolveGlyphs(spec, slices),
+      glyphs,
       donut: isDonut(spec),
       spokes: spec.spokes,
       textured: spec.textured,
@@ -321,8 +533,8 @@ export function renderPieChart(spec) {
     }),
   );
 
-  if (spec.legend !== false && slices.length > 0) {
-    lines.push(...legendLines(slices, { width, glyphs: resolveGlyphs(spec, slices), markers: spec.markers }));
+  if (hasLegend(spec, slices)) {
+    lines.push(...legendLines(slices, { width, glyphs, markers: spec.markers }));
   }
   return lines.join("\n");
 }
@@ -335,8 +547,8 @@ export function renderPieChart(spec) {
  * "outside" | "title" | "legend" | "legend-mark".
  */
 export function renderChartRows(spec) {
-  const width = Math.max(16, Math.floor(spec.width ?? 48));
-  const margin = Math.max(0, Math.min(3, Math.floor(spec.margin ?? 1)));
+  const width = chartWidth(spec);
+  const margin = chartMargin(spec);
   const slices = readSlices(spec);
   const glyphs = resolveGlyphs(spec, slices);
 
@@ -357,7 +569,7 @@ export function renderChartRows(spec) {
     }),
   );
 
-  if (spec.legend !== false && slices.length > 0 && spec.plainLegend !== true) {
+  if (hasRowLegend(spec, slices)) {
     rows.push(...legendRowRuns(slices, { width, marker: "●" }));
   }
 

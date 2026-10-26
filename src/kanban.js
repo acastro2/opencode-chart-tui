@@ -11,6 +11,11 @@
 //    reads as a card rather than as a painted block.
 // 3. A board that does not fit reports what it dropped. Silently hiding cards
 //    would make the chart lie, which is worse than being short.
+//
+// The width is a budget. It is spent in this order: the gap between columns,
+// then the columns themselves down to MIN_COLUMN cells, then whole columns. A
+// column that cannot be shown is counted in a note, so no card leaves without a
+// word.
 
 import {
   DEFAULT_PALETTE,
@@ -24,21 +29,101 @@ import {
   wrapText,
 } from "./core.js";
 import { paletteOf, themeOf } from "./theme.js";
+import { plotRows as plotRowsFor } from "./layout.js";
 
 /** How many lines a title or a set of meta lines may take per card. */
 const TITLE_LINES = 3;
 const META_LINES = 2;
 /** One clear column between boards, because columns must not touch. */
 const GAP = 1;
-const MIN_COLUMN = 10;
+/** The narrowest a column may get: a two-cell card is still a card. */
+const MIN_COLUMN = 4;
+/** The narrowest board worth drawing: below this the header has no room. */
+const MIN_WIDTH = 16;
+
+/**
+ * The first of `keys` that `raw` has and does not set to null, else null. Every
+ * field on a card and on a column is a `title ?? label ?? name` chain, and a
+ * card may not even be an object, so the chain lives here once.
+ */
+function firstValue(raw, keys) {
+  for (const key of keys) {
+    const value = raw?.[key];
+    if (value != null) return value;
+  }
+  return null;
+}
+
+/**
+ * The first of `values` that is an array, else an empty list. A column may carry
+ * `cards` or `items`; a non-array in `cards` must not hide a real `items` list.
+ */
+function firstArray(...values) {
+  for (const value of values) {
+    if (Array.isArray(value)) return value;
+  }
+  return [];
+}
+
+/** A card's meta lines: an array is mapped, a single value is one line. */
+function readMeta(raw) {
+  const meta = firstValue(raw, ["meta", "subtitle"]);
+  if (meta == null) return [];
+  return Array.isArray(meta) ? meta.map(String) : [String(meta)];
+}
+
+/** A card's own colour, when it declares one as a string. */
+function readColor(raw) {
+  const color = firstValue(raw, ["color"]);
+  return typeof color === "string" ? color : null;
+}
 
 function readCard(raw) {
-  const meta = raw?.meta ?? raw?.subtitle ?? null;
   return {
-    title: String(raw?.title ?? raw?.label ?? raw?.name ?? ""),
-    meta: Array.isArray(meta) ? meta.map(String) : meta == null ? [] : [String(meta)],
-    color: typeof raw?.color === "string" ? raw.color : null,
+    title: String(firstValue(raw, ["title", "label", "name"]) ?? ""),
+    meta: readMeta(raw),
+    color: readColor(raw),
   };
+}
+
+/** A column's header: its title, its label, then a positional name. */
+function columnTitle(column, index) {
+  const title = firstValue(column, ["title", "label"]);
+  return String(title ?? `Column ${index + 1}`);
+}
+
+/** `columns: [{title, cards}]` as written, in the order given. */
+function readColumns(list) {
+  return list.map((column, index) => ({
+    title: columnTitle(column, index),
+    cards: firstArray(column?.cards, column?.items).map(readCard),
+  }));
+}
+
+/** Bucket flat cards by their column key, keeping first-seen order. */
+function groupByColumn(cards) {
+  const grouped = new Map();
+  for (const raw of cards) {
+    const key = String(firstValue(raw, ["column", "status", "list"]) ?? "Cards");
+    const bucket = grouped.get(key) ?? [];
+    bucket.push(readCard(raw));
+    grouped.set(key, bucket);
+  }
+  return grouped;
+}
+
+/** `order` first for the titles it names, then the rest in appearance order. */
+function orderedTitles(order, grouped) {
+  const named = order.filter((title) => grouped.has(title));
+  const rest = [...grouped.keys()].filter((title) => !order.includes(title));
+  return [...named, ...rest];
+}
+
+/** Flat `cards: [{column, title}]`, grouped by column or status. */
+function groupedColumns(spec) {
+  const grouped = groupByColumn(firstArray(spec.cards));
+  const order = firstArray(spec.order).map(String);
+  return orderedTitles(order, grouped).map((title) => ({ title, cards: grouped.get(title) ?? [] }));
 }
 
 /**
@@ -47,40 +132,66 @@ function readCard(raw) {
  * order taken from `spec.order` first and appearance second.
  */
 export function normalizeBoard(spec) {
-  const columns = [];
-  const list = Array.isArray(spec.columns) ? spec.columns : null;
-
-  if (list) {
-    for (const column of list) {
-      const cards = Array.isArray(column?.cards) ? column.cards : Array.isArray(column?.items) ? column.items : [];
-      columns.push({
-        title: String(column?.title ?? column?.label ?? `Column ${columns.length + 1}`),
-        cards: cards.map(readCard),
-      });
-    }
-    return { columns };
-  }
-
-  const cards = Array.isArray(spec.cards) ? spec.cards : [];
-  const order = Array.isArray(spec.order) ? spec.order.map(String) : [];
-  const grouped = new Map();
-  for (const raw of cards) {
-    const key = String(raw?.column ?? raw?.status ?? raw?.list ?? "Cards");
-    if (!grouped.has(key)) grouped.set(key, []);
-    grouped.get(key).push(readCard(raw));
-  }
-  const titles = [...order.filter((title) => grouped.has(title)), ...[...grouped.keys()].filter((title) => !order.includes(title))];
-  for (const title of titles) columns.push({ title, cards: grouped.get(title) ?? [] });
-  return { columns };
+  if (Array.isArray(spec.columns)) return { columns: readColumns(spec.columns) };
+  return { columns: groupedColumns(spec) };
 }
 
-/** Keep at most `max` lines and mark the cut with an ellipsis. */
+/**
+ * How many columns fit, how wide they are, and the gap between them. The gap
+ * goes first, then the columns shrink to MIN_COLUMN, and only then is one
+ * dropped: every step is the smallest one that lets another column stay.
+ */
+function fitColumns(width, count, gap, requested) {
+  let gapUsed = gap;
+  let shown = count;
+
+  for (;;) {
+    const natural = Math.floor((width - (shown - 1) * gapUsed) / shown);
+    if (natural >= MIN_COLUMN) {
+      return {
+        gap: gapUsed,
+        shown,
+        width: Math.max(MIN_COLUMN, Math.min(natural, requested ?? natural)),
+      };
+    }
+    if (gapUsed > 0) {
+      gapUsed = 0;
+      continue;
+    }
+    if (shown > 1) {
+      shown -= 1;
+      continue;
+    }
+    // One column, still narrower than the minimum: it takes the whole width and
+    // the note rows explain the rest.
+    return { gap: 0, shown, width: Math.max(MIN_COLUMN, width) };
+  }
+}
+
+/**
+ * The header line. `Title (n)` when it fits, `Title(n)` when the space is worth
+ * more than the space between them, and a cut title when the count is the only
+ * part that must survive: a column with no count reads as empty.
+ */
+function columnHeader(title, count, width) {
+  const spaced = ` (${count})`;
+  if (cols(title) + cols(spaced) <= width) return `${title}${spaced}`;
+  const tight = `(${count})`;
+  if (cols(title) + cols(tight) <= width) return `${title}${tight}`;
+  const room = width - cols(tight);
+  if (room >= 2) return `${truncate(title, room)}${tight}`;
+  return truncate(`${title}${spaced}`, width);
+}
+
+/** Keep at most `max` lines and mark the cut with an ellipsis. Zero keeps none. */
 function clipLines(lines, max) {
-  const limit = Math.max(1, max);
-  if (lines.length <= limit) return lines;
-  const kept = lines.slice(0, limit);
-  const last = kept[limit - 1];
-  kept[limit - 1] = `${truncate(last, Math.max(1, cols(last) - 1))}…`;
+  if (max <= 0) return [];
+  if (lines.length <= max) return lines;
+  const kept = lines.slice(0, max);
+  const last = kept[max - 1];
+  // `truncate` adds its own ellipsis; a second one is just noise.
+  const cut = truncate(last, Math.max(1, cols(last) - 1));
+  kept[max - 1] = cut.endsWith("…") ? cut : `${cut}…`;
   return kept;
 }
 
@@ -97,10 +208,119 @@ function wrapColumn(column, inner, limit) {
   return { cards, height: Math.max(0, height - 1) };
 }
 
+function kanbanWidth(spec) {
+  return Math.max(MIN_WIDTH, Math.floor(spec.width ?? 56));
+}
+
+function kanbanTitle(spec) {
+  return spec.title == null ? null : String(spec.title);
+}
+
+function kanbanRequested(spec) {
+  return Number.isFinite(Number(spec.columnWidth)) ? Math.floor(Number(spec.columnWidth)) : null;
+}
+
+function kanbanGap(spec) {
+  const asked = Number(spec.gap);
+  return Number.isFinite(asked) ? Math.max(0, Math.floor(asked)) : GAP;
+}
+
+/** Columns that did not fit, as one note with the cards they held. */
+function hiddenNote(hidden) {
+  if (hidden.length === 0) return null;
+  const cards = hidden.reduce((sum, column) => sum + column.cards.length, 0);
+  const columns = `${hidden.length} column${hidden.length === 1 ? "" : "s"}`;
+  const cardText = `${cards} card${cards === 1 ? "" : "s"}`;
+  return `${columns} hidden (${cardText})`;
+}
+
+/** A count from a fence: a finite number wins, anything else is the default. */
+function lineCount(value, fallback, min) {
+  const asked = Number(value);
+  return Number.isFinite(asked) ? Math.max(min, Math.floor(asked)) : fallback;
+}
+
+function linesLimit(spec) {
+  return {
+    title: lineCount(spec.titleLines, TITLE_LINES, 1),
+    meta: lineCount(spec.metaLines, META_LINES, 0),
+  };
+}
+
+/** `needed` is the grid the cards want; title and notes are rows too. */
+function boardHeightOf(spec, title, notes, needed) {
+  return Math.max(
+    2,
+    plotRowsFor(spec, {
+      chrome: (title ? 1 : 0) + notes.length,
+      fallback: needed,
+      min: 2,
+      max: 60,
+    }),
+  );
+}
+
+/** The shortest overflow note that still carries the count. */
+function overflowText(dropped, columnWidth) {
+  const text = `… ${dropped} more`;
+  return cols(text) <= columnWidth ? text : truncate(`…${dropped}`, columnWidth);
+}
+
+/**
+ * Which cards fit in `limit` rows, and where each one starts. The first card
+ * that does not fit ends the list: a later, smaller card must not jump the one
+ * that was dropped, or the column reads out of order.
+ */
+function placeCards(cards, limit) {
+  const placed = [];
+  let y = 2; // the rule and the header
+  for (const entry of cards) {
+    if (y + entry.height - 1 >= limit) break;
+    placed.push({ entry, y });
+    y += entry.height + 1;
+  }
+  return { placed, y };
+}
+
+/** One column: header, rule, cards. Returns its overflow report, if any. */
+function drawColumn(grid, { column, index, x0, x1, columnWidth, accent, wrapped, boardHeight }) {
+  stampText(grid, x0, 0, columnHeader(column.title, column.cards.length, columnWidth), { slice: index, kind: "title" });
+  stampText(grid, x0, 1, "─".repeat(columnWidth), { slice: index, kind: "axis" });
+
+  const full = placeCards(wrapped.cards, boardHeight);
+  // The report needs a row of its own, so a column that drops gives up its last
+  // row instead of writing the note over a card's border.
+  const layout = full.placed.length === wrapped.cards.length ? full : placeCards(wrapped.cards, boardHeight - 1);
+
+  for (const { entry, y } of layout.placed) {
+    drawBox(grid, x0, y, x1, y + entry.height - 1, { slice: index, kind: "fill", color: entry.card.color ?? accent });
+    entry.lines.forEach((line, lineIndex) => {
+      stampText(grid, x0 + 1, y + 1 + lineIndex, line, { slice: index, kind: "title" });
+    });
+    entry.meta.forEach((line, lineIndex) => {
+      stampText(grid, x0 + 1, y + 1 + entry.lines.length + lineIndex, line, { slice: index, kind: "legend" });
+    });
+  }
+
+  const dropped = wrapped.cards.length - layout.placed.length;
+  if (dropped === 0) return null;
+  // The count is the report: a narrower column shortens the words, never the
+  // number.
+  return { index, x0, y: Math.min(layout.y, boardHeight - 1), text: overflowText(dropped, columnWidth) };
+}
+
+function pushGrid(rows, width, grid) {
+  for (const row of grid) rows.push({ width, runs: cellsToRuns(row) });
+}
+
+function pushNotes(rows, width, notes) {
+  for (const note of notes) rows.push({ width, runs: [{ text: truncate(`  ${note}`, width), slice: -1, kind: "legend" }] });
+}
+
 export function renderKanbanRows(spec) {
-  const width = Math.max(24, Math.floor(spec.width ?? 56));
+  const width = kanbanWidth(spec);
   const rows = [];
-  const title = spec.title == null ? null : String(spec.title);
+  const title = kanbanTitle(spec);
   if (title) rows.push(titleRow(title, width));
 
   const { columns } = normalizeBoard(spec);
@@ -110,51 +330,42 @@ export function renderKanbanRows(spec) {
   }
 
   const palette = paletteOf(spec);
-  const gap = Math.max(1, Math.floor(spec.gap ?? GAP));
-  const natural = Math.floor((width - (columns.length - 1) * gap) / columns.length);
-  const columnWidth = Math.max(MIN_COLUMN, Math.min(natural, Math.floor(spec.columnWidth ?? natural)));
-  const inner = Math.max(4, columnWidth - 2);
+  const fit = fitColumns(width, columns.length, kanbanGap(spec), kanbanRequested(spec));
+  const shown = columns.slice(0, fit.shown);
+  const columnWidth = fit.width;
+  const inner = Math.max(1, columnWidth - 2);
 
-  const limit = { title: Math.max(1, Math.floor(spec.titleLines ?? TITLE_LINES)), meta: Math.max(0, Math.floor(spec.metaLines ?? META_LINES)) };
-  const wrapped = columns.map((column) => wrapColumn(column, inner, limit));
+  // A column that cannot be shown is one note with the cards it held, so the
+  // reader can see that the board is short rather than think it is complete.
+  const note = hiddenNote(columns.slice(fit.shown));
+  const notes = note === null ? [] : [note];
+
+  const wrapped = shown.map((column) => wrapColumn(column, inner, linesLimit(spec)));
   const needed = Math.max(...wrapped.map((entry) => entry.height));
-  const height = Math.max(4, Math.floor(spec.height ?? needed));
+  const boardHeight = boardHeightOf(spec, title, notes, needed);
 
-  const grid = blankGrid(width, height);
+  const grid = blankGrid(width, boardHeight);
   const reports = [];
-
-  columns.forEach((column, index) => {
-    const accent = palette[index % palette.length];
-    const x0 = index * (columnWidth + gap);
-    const x1 = x0 + columnWidth - 1;
-
-    stampText(grid, x0, 0, truncate(`${column.title} (${column.cards.length})`, columnWidth), { slice: index, kind: "title" });
-    stampText(grid, x0, 1, "─".repeat(columnWidth), { slice: index, kind: "axis" });
-
-    let y = 2;
-    let dropped = 0;
-    for (const entry of wrapped[index].cards) {
-      if (y + entry.height - 1 >= height) {
-        dropped += 1;
-        continue;
-      }
-      drawBox(grid, x0, y, x1, y + entry.height - 1, { slice: index, kind: "fill", color: entry.card.color ?? accent });
-      entry.lines.forEach((line, lineIndex) => {
-        stampText(grid, x0 + 1, y + 1 + lineIndex, line, { slice: index, kind: "title" });
-      });
-      entry.meta.forEach((line, lineIndex) => {
-        stampText(grid, x0 + 1, y + 1 + entry.lines.length + lineIndex, line, { slice: index, kind: "legend" });
-      });
-      y += entry.height + 1;
-    }
-
-    if (dropped > 0) reports.push({ index, x0, y: Math.min(y, height - 1), text: `… ${dropped} more` });
+  shown.forEach((column, index) => {
+    const x0 = index * (columnWidth + fit.gap);
+    const report = drawColumn(grid, {
+      column,
+      index,
+      x0,
+      x1: x0 + columnWidth - 1,
+      columnWidth,
+      accent: palette[index % palette.length],
+      wrapped: wrapped[index],
+      boardHeight,
+    });
+    if (report) reports.push(report);
   });
 
   for (const report of reports) {
-    stampText(grid, report.x0, report.y, truncate(report.text, columnWidth), { slice: report.index, kind: "legend" });
+    stampText(grid, report.x0, report.y, report.text, { slice: report.index, kind: "legend" });
   }
 
-  for (const row of grid) rows.push({ width, runs: cellsToRuns(row) });
+  pushGrid(rows, width, grid);
+  pushNotes(rows, width, notes);
   return rows;
 }

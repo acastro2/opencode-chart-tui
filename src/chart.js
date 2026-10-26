@@ -9,11 +9,12 @@
 // out loud in a footer row. A chart that silently changes the data is worse than
 // one that admits it did.
 
-import { runsText, wrapText } from "./core.js";
+import { runsText, truncate, wrapText } from "./core.js";
 import { renderChartRows as renderPieRows } from "./pie.js";
 import { renderBarRows } from "./bar.js";
 import { renderHistogramRows } from "./histogram.js";
 import { renderCandleRows } from "./candle.js";
+import { renderOhlcRows } from "./ohlc.js";
 import { renderLineRows } from "./line.js";
 import { renderHeatmapRows } from "./heatmap.js";
 import { renderGaugeRows } from "./gauge.js";
@@ -34,7 +35,7 @@ export const CHART_TYPES = {
   histogram: renderHistogramRows,
   candle: renderCandleRows,
   candlestick: renderCandleRows,
-  ohlc: renderCandleRows,
+  ohlc: renderOhlcRows,
   line: renderLineRows,
   area: renderLineRows,
   sparkline: renderLineRows,
@@ -51,6 +52,26 @@ export const CHART_TYPES = {
   gantt: renderGanttRows,
 };
 
+/** A refusal: no spec, and the reason in plain words. */
+function refused(error) {
+  return { spec: null, error };
+}
+
+/** JSON.parse that turns a failure into a short reason instead of a stack. */
+function parseBody(text) {
+  if (text === "") return refused("empty fence body");
+  try {
+    return { spec: JSON.parse(readableJson(text)), error: null };
+  } catch (error) {
+    return refused(jsonReason(error, text));
+  }
+}
+
+/** A fence body must be an object: an array or a scalar is a mistake. */
+function isSpecObject(spec) {
+  return Boolean(spec) && typeof spec === "object" && !Array.isArray(spec);
+}
+
 /**
  * Read a fence body. Comments and trailing commas are stripped, and a failure
  * comes back as `{ spec: null, error: "…" }` with a line and column, never as a
@@ -58,74 +79,107 @@ export const CHART_TYPES = {
  */
 export function parseChart(source) {
   const text = String(source ?? "").trim();
-  if (text === "") return { spec: null, error: "empty fence body" };
-
-  let spec;
-  try {
-    spec = JSON.parse(readableJson(text));
-  } catch (error) {
-    return { spec: null, error: jsonReason(error, text) };
-  }
-  if (!spec || typeof spec !== "object" || Array.isArray(spec)) {
-    return { spec: null, error: "the fence body must be a JSON object" };
-  }
-  return { spec, error: null };
+  const parsed = parseBody(text);
+  if (parsed.error) return parsed;
+  return isSpecObject(parsed.spec) ? parsed : refused("the fence body must be a JSON object");
 }
+
+/** Where the string that starts at `start` ends: just past its closing quote. */
+function stringEnd(source, start) {
+  let index = start + 1;
+  while (index < source.length) {
+    if (source[index] === "\\") {
+      index += 2;
+      continue;
+    }
+    if (source[index] === '"') return index + 1;
+    index += 1;
+  }
+  return index;
+}
+
+/**
+ * Where a `//` comment that starts at `start` ends: past its newline, which the
+ * comment owns, or at the end of the source.
+ */
+function lineEnd(source, start) {
+  let index = start;
+  while (index < source.length && source[index] !== "\n") index += 1;
+  return Math.min(source.length, index + 1);
+}
+
+/** Whether the two characters at `index` close a block comment. */
+function closesComment(source, index) {
+  return source[index] === "*" && source[index + 1] === "/";
+}
+
+/** Where a block comment that starts at `start` ends: past its closing star. */
+function blockEnd(source, start) {
+  let index = start + 2;
+  while (index < source.length && !closesComment(source, index)) index += 1;
+  return Math.min(source.length, index + 2);
+}
+
+/** Whether a comma at `index` sits only white space away from a closing bracket. */
+function dropsComma(source, index) {
+  let ahead = index + 1;
+  while (ahead < source.length && /\s/.test(source[ahead])) ahead += 1;
+  return source[ahead] === "}" || source[ahead] === "]";
+}
+
+/** One source character, taken as it is. */
+function plainToken(source, index) {
+  return { text: source[index], end: index + 1 };
+}
+
+/** A quoted string, copied whole so a // or /* inside it survives. */
+function stringToken(source, index) {
+  const end = stringEnd(source, index);
+  return { text: source.slice(index, end), end };
+}
+
+/** A slash: the start of a comment, or just a slash. */
+function slashToken(source, index) {
+  const next = source[index + 1];
+  if (next === "/") return { text: "\n", end: lineEnd(source, index) };
+  if (next === "*") return { text: " ", end: blockEnd(source, index) };
+  return plainToken(source, index);
+}
+
+/** A comma, dropped when it only trails a value before a closing bracket. */
+function commaToken(source, index) {
+  return dropsComma(source, index) ? { text: "", end: index + 1 } : plainToken(source, index);
+}
+
+// The three characters that need more than a copy; every other one is plain.
+const TOKENS = { '"': stringToken, "/": slashToken, ",": commaToken };
 
 /** JSON with the human bits stripped: comments, trailing commas. */
 export function readableJson(source) {
   let out = "";
-  let inString = false;
+  let index = 0;
 
-  for (let index = 0; index < source.length; index++) {
-    const char = source[index];
-    const next = source[index + 1];
-
-    if (inString) {
-      out += char;
-      if (char === "\\") {
-        out += next ?? "";
-        index += 1;
-        continue;
-      }
-      if (char === '"') inString = false;
-      continue;
-    }
-
-    if (char === '"') {
-      inString = true;
-      out += char;
-      continue;
-    }
-    if (char === "/" && next === "/") {
-      while (index < source.length && source[index] !== "\n") index += 1;
-      out += "\n";
-      continue;
-    }
-    if (char === "/" && next === "*") {
-      index += 2;
-      while (index < source.length && !(source[index] === "*" && source[index + 1] === "/")) index += 1;
-      index += 1;
-      out += " ";
-      continue;
-    }
-    if (char === ",") {
-      let ahead = index + 1;
-      while (ahead < source.length && /\s/.test(source[ahead])) ahead += 1;
-      if (source[ahead] === "}" || source[ahead] === "]") continue;
-    }
-    out += char;
+  while (index < source.length) {
+    const take = TOKENS[source[index]] ?? plainToken;
+    const token = take(source, index);
+    out += token.text;
+    index = token.end;
   }
 
   return out;
 }
 
+/** The position a JSON error names, or -1 when its message carries none. */
+function errorPosition(error) {
+  const found = /position (\d+)/.exec(String(error?.message ?? ""));
+  return found ? Number(found[1]) : -1;
+}
+
 /** A JSON error as one line, with the position turned into line and column. */
 function jsonReason(error, source) {
   const message = String(error?.message ?? error).replace(/ in JSON.*$/, "");
-  const position = /position (\d+)/.exec(String(error?.message ?? ""));
-  if (!position) return message;
-  const at = Number(position[1]);
+  const at = errorPosition(error);
+  if (at < 0) return message;
   const before = source.slice(0, at);
   const line = before.split("\n").length;
   const column = at - before.lastIndexOf("\n");
@@ -139,38 +193,197 @@ function isHeatGrid(rows) {
 
 /** The type the data looks like, when the fence did not name one. */
 function guessType(spec) {
-  if (Array.isArray(spec.slices)) return "pie";
-  if (Array.isArray(spec.columns) && Array.isArray(spec.rows) && !isHeatGrid(spec.rows)) return "table";
-  if (Array.isArray(spec.rows)) return "heatmap";
-  if (Array.isArray(spec.values) && Array.isArray(spec.values[0])) return "heatmap";
-  if (Array.isArray(spec.values) || Array.isArray(spec.series)) return "bar";
-  return "";
+  const found = TYPE_GUESSES.find(([matches]) => matches(spec));
+  return found ? found[1] : "";
 }
 
-/** How many entries of a numeric list are not numbers. */
-function badEntries(list) {
-  if (!Array.isArray(list)) return 0;
-  let count = 0;
-  for (const entry of list) {
-    if (Array.isArray(entry)) {
-      // A [label, value] pair carries its label first, so only the value counts.
-      const pair = entry.length === 2 && typeof entry[0] === "string";
-      count += badEntries(pair ? [entry[1]] : entry);
-    } else if (entry && typeof entry === "object") count += badFields(entry);
-    else if (typeof entry !== "number" || !Number.isFinite(entry)) count += 1;
-  }
-  return count;
+function looksLikePie(spec) {
+  return Array.isArray(spec.slices);
 }
 
-/** How many of an object's numeric fields are not numbers. */
-function badFields(entry) {
-  let count = 0;
-  for (const key of ["value", "x", "y", "o", "h", "l", "c", "open", "high", "low", "close"]) {
-    const value = entry[key];
-    if (value === undefined) continue;
-    if (typeof value !== "number" || !Number.isFinite(value)) count += 1;
+function looksLikeTable(spec) {
+  return Array.isArray(spec.columns) && Array.isArray(spec.rows) && !isHeatGrid(spec.rows);
+}
+
+function hasRowList(spec) {
+  return Array.isArray(spec.rows);
+}
+
+function hasNestedValues(spec) {
+  return Array.isArray(spec.values) && Array.isArray(spec.values[0]);
+}
+
+function hasValueList(spec) {
+  return Array.isArray(spec.values) || Array.isArray(spec.series);
+}
+
+// The guesses, in the order the shapes are tried. A pie's slices win over
+// everything, and a bare value list is the last thing worth guessing.
+const TYPE_GUESSES = [
+  [looksLikePie, "pie"],
+  [looksLikeTable, "table"],
+  [hasRowList, "heatmap"],
+  [hasNestedValues, "heatmap"],
+  [hasValueList, "bar"],
+];
+
+/**
+ * What `Number()` makes of one value. `ok` is a number the caller wrote, or a
+ * string that reads as one. `coerced` is a missing value that `Number()` turns
+ * into 0 all the same, so every family draws a 0. `bad` is a value no number
+ * comes out of, which is the one a family may drop.
+ */
+function valueKind(value) {
+  if (value === null || value === "") return "coerced";
+  return Number.isFinite(Number(value)) ? "ok" : "bad";
+}
+
+/** Whether a value is an object worth reading fields from. */
+function isObject(value) {
+  return Boolean(value) && typeof value === "object";
+}
+
+// Every field a point, candle or bar object can carry a number in.
+const NUMERIC_FIELDS = ["value", "x", "y", "o", "h", "l", "c", "open", "high", "low", "close"];
+
+/** A tally of the values a chart cannot read outright: drawn as 0, or not at all. */
+function emptyTally() {
+  return { coerced: 0, bad: 0 };
+}
+
+/** Add one value's fate. A number the chart can draw adds nothing. */
+function countValue(tally, value) {
+  const kind = valueKind(value);
+  if (kind !== "ok") tally[kind] += 1;
+}
+
+/** Add the numeric fields one object carries. A field left out is not a field. */
+function countFields(tally, entry) {
+  for (const key of NUMERIC_FIELDS) {
+    if (entry[key] !== undefined) countValue(tally, entry[key]);
   }
-  return count;
+}
+
+/** A [label, value] pair carries its label first, so only the value counts. */
+function pairValue(entry) {
+  return entry.length === 2 && typeof entry[0] === "string" ? [entry[1]] : entry;
+}
+
+/** Add one entry of a numeric list: a pair is walked, an object read, a value judged. */
+function countEntry(tally, entry) {
+  if (Array.isArray(entry)) {
+    for (const value of pairValue(entry)) countEntry(tally, value);
+    return;
+  }
+  if (isObject(entry)) countFields(tally, entry);
+  else countValue(tally, entry);
+}
+
+/** Add every entry of a numeric list. A list that is not a list holds nothing. */
+function countEntries(tally, list) {
+  if (!Array.isArray(list)) return;
+  for (const entry of list) countEntry(tally, entry);
+}
+
+/** The fields this library has renamed, with when each rename applies. */
+function renamedNotes(spec) {
+  const notes = [];
+  if (spec.percent !== undefined && spec.showPercent === undefined) notes.push("percent is now showPercent");
+  if (gapIsColour(spec)) notes.push("the boundary colour is boundaryColor now");
+  return notes;
+}
+
+/**
+ * Whether a string `gap` is the old boundary colour. It names two things: the
+ * colour between two shapes, and the blank columns a board puts between its
+ * columns. A string that reads as a number is spacing, so it keeps its key:
+ * renaming "2" into a colour throws the spacing away.
+ */
+function gapIsColour(spec) {
+  return typeof spec.gap === "string" && !Number.isFinite(Number(spec.gap));
+}
+
+/**
+ * The spec to draw. When `gap` is the old boundary colour the renamed key goes,
+ * because a hex string left behind becomes `Math.floor("#333")` and shrinks the
+ * board. A numeric `gap`, string or not, is spacing and passes untouched.
+ */
+function renamedSpec(spec) {
+  if (!gapIsColour(spec)) return spec;
+  const { gap, ...rest } = spec;
+  return rest.boundaryColor === undefined ? { ...rest, boundaryColor: gap } : rest;
+}
+
+/** Whether a heat map still carries its column names in `columns`. */
+function headersMoved(spec, type) {
+  return type === "heatmap" && Array.isArray(spec.columns) && !Array.isArray(spec.headers);
+}
+
+/** The note for a heat map whose column names live under the old key. */
+function headerNote(spec, type) {
+  return headersMoved(spec, type) ? ["heatmap headers come from headers now"] : [];
+}
+
+/** The lists that carry plain numbers, wherever the family keeps them. */
+function valueLists(spec) {
+  const lists = [spec.values, spec.data, spec.points, spec.slices, spec.candles, spec.items, spec.children];
+  if (Array.isArray(spec.series)) lists.push(...spec.series.map((item) => item?.values));
+  if (Array.isArray(spec.links)) lists.push(spec.links);
+  return lists;
+}
+
+/** A spec's `rows`, when there are any. */
+function rowsOf(spec) {
+  return Array.isArray(spec.rows) ? spec.rows : [];
+}
+
+/** Whether the spec draws a heat grid, whose rows hold value lists. */
+function isHeatSpec(spec, type) {
+  return type === "heatmap" || isHeatGrid(rowsOf(spec));
+}
+
+/** The heat map's per-row value lists, when the spec has them. */
+function rowLists(spec, type) {
+  if (!isHeatSpec(spec, type)) return [];
+  return rowsOf(spec).map((row) => row?.values);
+}
+
+// The families that name what they could not draw in their own units: a candle
+// skipped, a value omitted, a row with no values. Counting the same rows again
+// at chart level reported one loss as two, in a wording that could be false.
+const SELF_REPORTING = new Set(["heatmap", "candle", "candlestick", "ohlc", "treemap"]);
+
+// The families that read a value they cannot draw as zero and paint the zero.
+// Every other family drops the value, or the entry that held it. A gauge's own
+// `value` is a scalar and is never counted here, so gauge and progress are out.
+const ZERO_FILLED = new Set(["bar", "column", "hbar", "line", "area", "sparkline", "scatter", "radar"]);
+
+/** `1 non-numeric value` / `2 non-numeric values`, the phrase every note uses. */
+function countPhrase(count) {
+  return `${count} non-numeric ${count === 1 ? "value" : "values"}`;
+}
+
+/**
+ * The note for values the chart could not draw. The two groups are counted
+ * apart, because the same loss does not have the same fate. A missing value is
+ * always drawn as 0 — `Number()` makes it 0 and every family reads it that way —
+ * so it never takes the dropping verb. A value no number comes out of takes the
+ * family's verb, and the two groups share one phrase when the verb agrees.
+ */
+function valueNote(type, tally) {
+  const total = tally.coerced + tally.bad;
+  if (SELF_REPORTING.has(type) || total === 0) return "";
+  if (ZERO_FILLED.has(type) || tally.bad === 0) return `${countPhrase(total)} treated as 0`;
+  if (tally.coerced === 0) return `${countPhrase(tally.bad)} dropped`;
+  return `${countPhrase(tally.coerced)} treated as 0 and ${countPhrase(tally.bad)} dropped`;
+}
+
+/** How many values the spec's lists hold that the chart cannot read outright. */
+function valueTally(spec, type) {
+  const tally = emptyTally();
+  for (const list of valueLists(spec)) countEntries(tally, list);
+  for (const list of rowLists(spec, type)) countEntries(tally, list);
+  return tally;
 }
 
 /**
@@ -178,40 +391,25 @@ function badFields(entry) {
  * keys that were renamed. Each one is worth a line under the chart.
  */
 function collectNotes(spec, type, guessed) {
-  const notes = [];
-  if (guessed) notes.push(`no type, read as ${type}`);
-  if (spec.percent !== undefined && spec.showPercent === undefined) {
-    notes.push("percent is now showPercent");
-  }
-  if (typeof spec.gap === "string") notes.push("the boundary colour is boundaryColor now");
-  if (type === "heatmap" && Array.isArray(spec.columns) && !Array.isArray(spec.headers)) {
-    notes.push("heatmap headers come from headers now");
-  }
+  const notes = guessed ? [`no type, read as ${type}`] : [];
+  notes.push(...renamedNotes(spec), ...headerNote(spec, type));
 
-  const lists = [spec.values, spec.points, spec.slices, spec.candles, spec.items, spec.children];
-  if (Array.isArray(spec.series)) lists.push(...spec.series.map((item) => item?.values));
-  if (Array.isArray(spec.links)) lists.push(spec.links);
-  if (type === "heatmap" || isHeatGrid(spec.rows ?? [])) {
-    lists.push(...(spec.rows ?? []).map((row) => row?.values));
-  }
-
-  let bad = 0;
-  for (const list of lists) bad += badEntries(list);
-  if (bad > 0) notes.push(`${bad} non-numeric ${bad === 1 ? "value" : "values"} treated as 0`);
+  const note = valueNote(type, valueTally(spec, type));
+  if (note) notes.push(note);
 
   return notes;
 }
 
-/** A muted line under the chart: what was changed to make the picture. */
 /**
  * The note footer: what the chart had to change. It wraps instead of clipping,
  * because a warning the reader cannot see is worse than no warning, and it stops
  * at three rows so a fence with many problems cannot bury the chart.
  */
 function noteRows(text, width) {
-  const lines = wrapText(text, Math.max(8, width - 4)).slice(0, 3);
-  if (lines.length === 3 && wrapText(text, Math.max(8, width - 4)).length > 3) {
-    lines[2] = `${lines[2].slice(0, Math.max(1, width - 6))} …`;
+  const wrapped = wrapText(text, Math.max(8, width - 4));
+  const lines = wrapped.slice(0, 3);
+  if (lines.length === 3 && wrapped.length > 3) {
+    lines[2] = `${truncate(lines[2], Math.max(1, width - 6))} …`;
   }
   return lines.map((line) => ({
     width,
@@ -219,33 +417,106 @@ function noteRows(text, width) {
   }));
 }
 
-/** The rows a fence becomes, as styled runs. */
-export function renderChartRows(spec = {}) {
-  const requested = String(spec.type ?? "").toLowerCase();
-  const known = Boolean(CHART_TYPES[requested]);
-  const width = Math.max(16, Math.floor(spec.width ?? 48));
+/** Last resort for a family that cannot shrink its own rows to `height`. */
+function fitToHeight(rows, budget, width) {
+  const limit = Math.max(0, Math.floor(budget));
+  if (rows.length <= limit) return rows;
+  if (limit <= 1) return rows.slice(0, limit);
+  const hidden = rows.length - limit;
+  const note = noteRows(
+    `${hidden} row${hidden === 1 ? "" : "s"} hidden at height ${limit}`,
+    width,
+  )[0];
+  return [...rows.slice(0, limit - 1), note];
+}
 
-  // A type that was named and is not known is a mistake worth saying out loud.
-  // Only a missing type is guessed from the shape of the data.
-  if (requested && !known) {
-    return [
-      {
-        width,
-        runs: [{ text: `unknown chart type "${requested}"`, slice: -1, kind: "legend" }],
-      },
-    ];
-  }
+/** The footer rows for what the chart changed, if it changed anything. */
+function notesFor(spec, type, guessed, width) {
+  const notes = collectNotes(spec, type, guessed);
+  return notes.length > 0 ? noteRows(notes.join("; "), width) : [];
+}
 
+/** One muted row that says why there is no chart. */
+function legendRow(width, text) {
+  return [{ width, runs: [{ text, slice: -1, kind: "legend" }] }];
+}
+
+/** The type the fence named, lowercased so "PIE" and "pie" agree. */
+function requestedType(spec) {
+  return String(spec.type ?? "").toLowerCase();
+}
+
+/** Whether a name is one of the registered families. */
+function isKnownType(type) {
+  return Boolean(CHART_TYPES[type]);
+}
+
+/** Whether the fence named a type that no family answers to. */
+function isWrongType(requested) {
+  return Boolean(requested) && !isKnownType(requested);
+}
+
+/**
+ * The renderer and the spec to hand it, or the one row that says why there is
+ * nothing to draw.
+ */
+function chooseChart(spec, width) {
+  const requested = requestedType(spec);
+  if (isWrongType(requested)) return { rows: legendRow(width, `unknown chart type "${requested}"`) };
+  return chartFor(spec, requested, width);
+}
+
+/** The renderer for a name that is either known or about to be guessed. */
+function chartFor(spec, requested, width) {
+  const known = isKnownType(requested);
   const type = known ? requested : guessType(spec);
   const render = CHART_TYPES[type];
-  if (!render) {
-    return [{ width, runs: [{ text: "no chart data", slice: -1, kind: "legend" }] }];
-  }
+  if (!render) return { rows: legendRow(width, "no chart data") };
 
-  const rows = render(type === requested ? spec : { ...spec, type });
-  const notes = collectNotes(spec, type, !known);
-  if (notes.length > 0) rows.push(...noteRows(notes.join("; "), width));
-  return rows;
+  const drawable = renamedSpec(spec);
+  // A guessed type is handed over under its own name, so a family that checks
+  // `spec.type` still sees the type it was guessed as.
+  return { render, type, spec: type === requested ? drawable : { ...drawable, type }, guessed: !known };
+}
+
+/** Keep the whole block, notes included, inside the requested `height`. */
+function applyHeight(rows, notes, height, width) {
+  const total = Number(height);
+  if (!Number.isFinite(total) || total <= 0) return [...rows, ...notes];
+
+  const limit = Math.max(1, Math.floor(total));
+  const noteBudget = Math.min(notes.length, Math.max(0, limit - 1));
+  const familyBudget = Math.max(1, limit - noteBudget);
+  return [...fitToHeight(rows, familyBudget, width), ...notes.slice(0, noteBudget)].slice(0, limit);
+}
+
+/**
+ * The height to hand the family: the block, less the rows its notes will take.
+ * The note footer is part of the block `height` measures, so a note has to cost
+ * a row of budget, not the family's last data row. A chart with no notes, or no
+ * height, is handed the spec as it came.
+ */
+function familyHeight(height, noteCount) {
+  const total = Number(height);
+  if (!Number.isFinite(total) || total <= 0) return height;
+  const limit = Math.max(1, Math.floor(total));
+  return Math.max(1, limit - Math.min(noteCount, Math.max(0, limit - 1)));
+}
+
+/** The rows a fence becomes, as styled runs. */
+export function renderChartRows(spec = {}) {
+  const width = Math.max(16, Math.floor(spec.width ?? 48));
+  const chart = chooseChart(spec, width);
+  if (chart.rows) return chart.rows;
+
+  // The notes are read before the family draws, so they are paid for out of the
+  // height budget instead of out of the rows the family already drew.
+  const notes = notesFor(spec, chart.type, chart.guessed, width);
+  const height = familyHeight(spec.height, notes.length);
+  const familyRows = chart.render(height === spec.height ? chart.spec : { ...chart.spec, height });
+  // `height` is the total block, not a family's private plot height. Families
+  // budget their own chrome first; this is the guard for the ones that cannot.
+  return applyHeight(familyRows, notes, spec.height, width);
 }
 
 /** The plain text of a chart, for a caller with no colour. */

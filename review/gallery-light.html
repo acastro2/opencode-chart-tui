@@ -1,0 +1,121 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Chart gallery</title>
+<style>
+  :root { color-scheme: light; }
+  * { box-sizing: border-box; }
+  body { margin: 0; padding: 28px; background: #ffffff; color: #1f2328;
+         font: 14px/1.5 ui-monospace, "SF Mono", Menlo, Consolas, monospace; }
+  h1 { margin: 0 0 4px; font-size: 18px; font-weight: 600; }
+  p  { margin: 0 0 24px; color: #57606a; }
+  .grid { display: grid; gap: 18px; grid-template-columns: repeat(auto-fill, minmax(420px, 1fr)); }
+  .card { display: block; border: 1px solid #d0d7de; border-radius: 10px; background: #f6f8fa;
+          padding: 10px 10px 6px; text-decoration: none; color: inherit; }
+  .card:hover { border-color: #3d444d; }
+  .name { margin: 0 0 8px; color: #57606a; font-size: 12px; letter-spacing: .04em; }
+  img { display: block; width: 100%; height: auto; border-radius: 8px; }
+  @media (max-width: 520px) { body { padding: 14px; } .grid { grid-template-columns: 1fr; } }
+</style>
+</head>
+<body>
+  <h1>Chart gallery (light)</h1>
+  <p>All 23 families, rendered from <code>scripts/samples.mjs</code>. Click a card for the full-size SVG.</p>
+  <div class="grid">
+      <a class="card" href="../assets/light/pie.svg" target="_blank" rel="noreferrer">
+        <div class="name">pie</div>
+        <img src="../assets/light/pie.svg" alt="pie chart" loading="lazy">
+      </a>
+      <a class="card" href="../assets/light/donut.svg" target="_blank" rel="noreferrer">
+        <div class="name">donut</div>
+        <img src="../assets/light/donut.svg" alt="donut chart" loading="lazy">
+      </a>
+      <a class="card" href="../assets/light/bar.svg" target="_blank" rel="noreferrer">
+        <div class="name">bar</div>
+        <img src="../assets/light/bar.svg" alt="bar chart" loading="lazy">
+      </a>
+      <a class="card" href="../assets/light/column.svg" target="_blank" rel="noreferrer">
+        <div class="name">column</div>
+        <img src="../assets/light/column.svg" alt="column chart" loading="lazy">
+      </a>
+      <a class="card" href="../assets/light/hbar.svg" target="_blank" rel="noreferrer">
+        <div class="name">hbar</div>
+        <img src="../assets/light/hbar.svg" alt="hbar chart" loading="lazy">
+      </a>
+      <a class="card" href="../assets/light/histogram.svg" target="_blank" rel="noreferrer">
+        <div class="name">histogram</div>
+        <img src="../assets/light/histogram.svg" alt="histogram chart" loading="lazy">
+      </a>
+      <a class="card" href="../assets/light/candle.svg" target="_blank" rel="noreferrer">
+        <div class="name">candle</div>
+        <img src="../assets/light/candle.svg" alt="candle chart" loading="lazy">
+      </a>
+      <a class="card" href="../assets/light/candlestick.svg" target="_blank" rel="noreferrer">
+        <div class="name">candlestick</div>
+        <img src="../assets/light/candlestick.svg" alt="candlestick chart" loading="lazy">
+      </a>
+      <a class="card" href="../assets/light/ohlc.svg" target="_blank" rel="noreferrer">
+        <div class="name">ohlc</div>
+        <img src="../assets/light/ohlc.svg" alt="ohlc chart" loading="lazy">
+      </a>
+      <a class="card" href="../assets/light/line.svg" target="_blank" rel="noreferrer">
+        <div class="name">line</div>
+        <img src="../assets/light/line.svg" alt="line chart" loading="lazy">
+      </a>
+      <a class="card" href="../assets/light/area.svg" target="_blank" rel="noreferrer">
+        <div class="name">area</div>
+        <img src="../assets/light/area.svg" alt="area chart" loading="lazy">
+      </a>
+      <a class="card" href="../assets/light/sparkline.svg" target="_blank" rel="noreferrer">
+        <div class="name">sparkline</div>
+        <img src="../assets/light/sparkline.svg" alt="sparkline chart" loading="lazy">
+      </a>
+      <a class="card" href="../assets/light/scatter.svg" target="_blank" rel="noreferrer">
+        <div class="name">scatter</div>
+        <img src="../assets/light/scatter.svg" alt="scatter chart" loading="lazy">
+      </a>
+      <a class="card" href="../assets/light/heatmap.svg" target="_blank" rel="noreferrer">
+        <div class="name">heatmap</div>
+        <img src="../assets/light/heatmap.svg" alt="heatmap chart" loading="lazy">
+      </a>
+      <a class="card" href="../assets/light/gauge.svg" target="_blank" rel="noreferrer">
+        <div class="name">gauge</div>
+        <img src="../assets/light/gauge.svg" alt="gauge chart" loading="lazy">
+      </a>
+      <a class="card" href="../assets/light/progress.svg" target="_blank" rel="noreferrer">
+        <div class="name">progress</div>
+        <img src="../assets/light/progress.svg" alt="progress chart" loading="lazy">
+      </a>
+      <a class="card" href="../assets/light/waterfall.svg" target="_blank" rel="noreferrer">
+        <div class="name">waterfall</div>
+        <img src="../assets/light/waterfall.svg" alt="waterfall chart" loading="lazy">
+      </a>
+      <a class="card" href="../assets/light/table.svg" target="_blank" rel="noreferrer">
+        <div class="name">table</div>
+        <img src="../assets/light/table.svg" alt="table chart" loading="lazy">
+      </a>
+      <a class="card" href="../assets/light/radar.svg" target="_blank" rel="noreferrer">
+        <div class="name">radar</div>
+        <img src="../assets/light/radar.svg" alt="radar chart" loading="lazy">
+      </a>
+      <a class="card" href="../assets/light/treemap.svg" target="_blank" rel="noreferrer">
+        <div class="name">treemap</div>
+        <img src="../assets/light/treemap.svg" alt="treemap chart" loading="lazy">
+      </a>
+      <a class="card" href="../assets/light/sankey.svg" target="_blank" rel="noreferrer">
+        <div class="name">sankey</div>
+        <img src="../assets/light/sankey.svg" alt="sankey chart" loading="lazy">
+      </a>
+      <a class="card" href="../assets/light/kanban.svg" target="_blank" rel="noreferrer">
+        <div class="name">kanban</div>
+        <img src="../assets/light/kanban.svg" alt="kanban chart" loading="lazy">
+      </a>
+      <a class="card" href="../assets/light/gantt.svg" target="_blank" rel="noreferrer">
+        <div class="name">gantt</div>
+        <img src="../assets/light/gantt.svg" alt="gantt chart" loading="lazy">
+      </a>
+  </div>
+</body>
+</html>

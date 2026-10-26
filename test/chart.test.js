@@ -183,4 +183,147 @@ check("a gauge row never exceeds its width", () => {
   }
 });
 
+check("the guess reads a table, a grid, a series and nothing at all", () => {
+  assert.match(renderChart({ width: 40, columns: [{ label: "a" }], rows: [["x", 1]] }), /no type, read as table/);
+  assert.match(renderChart({ width: 40, values: [[1, 2], [3, 4]] }), /no type, read as heatmap/);
+  assert.match(renderChart({ width: 40, series: [{ values: [1, 2] }] }), /no type, read as bar/);
+  assert.equal(renderChartRows({ width: 40 })[0].runs[0].text, "no chart data");
+});
+
+check("height is the whole block, not the plot", () => {
+  for (const height of [1, 2, 3]) {
+    const rows = renderChartRows({ type: "pie", width: 40, height, slices: [["a", 6], ["b", 4]] });
+    assert.ok(rows.length <= height, `height ${height} gave ${rows.length} rows`);
+  }
+  const trimmed = textRows(renderChartRows({ type: "pie", width: 40, height: 2, slices: [["a", 6], ["b", 4]] }));
+  assert.match(trimmed[trimmed.length - 1], /rows hidden at height 2/, trimmed.join(" | "));
+  // A family that already fits inside the budget is left alone.
+  const gauge = renderChartRows({ type: "gauge", width: 40, height: 10, value: 50, max: 100 });
+  assert.equal(gauge.length, 1, "the gauge fits its own block");
+});
+
+check("a numeric string draws as its number and is not reported", () => {
+  // Every family reads a value with Number(), so "12" draws at 12. The footer
+  // must not call it bad, and the picture must be the number's picture.
+  const fromStrings = renderChart({ type: "bar", width: 40, values: ["12", "13"] });
+  const fromNumbers = renderChart({ type: "bar", width: 40, values: [12, 13] });
+  assert.equal(fromStrings, fromNumbers, "a numeric string draws exactly like its number");
+  assert.ok(!fromStrings.includes("non-numeric"), "and nothing is reported about it");
+});
+
+check("a null and an empty string are still missing values", () => {
+  // Number(null) and Number("") are 0, but neither is a number the caller wrote.
+  for (const missing of [null, ""]) {
+    const rows = textRows(renderChartRows({ type: "bar", width: 40, values: [1, missing, 3] }));
+    const note = rows.find((row) => row.includes("non-numeric"));
+    assert.ok(note && note.includes("1 non-numeric value"), `${JSON.stringify(missing)}: ${rows.join(" | ")}`);
+  }
+});
+
+check("the footer says whether a bad value is drawn as 0 or dropped", () => {
+  // A bar reads the bad value as zero and draws it; a pie has no slice for it.
+  const bar = renderChart({ type: "bar", width: 40, values: [1, "n/a", 3] });
+  assert.match(bar, /1 non-numeric value treated as 0/);
+
+  const pie = renderChart({ type: "pie", width: 40, slices: [["a", "n/a"], ["b", 25]] });
+  assert.match(pie, /1 non-numeric value dropped/);
+  assert.ok(!pie.includes("treated as 0"), `a dropped value is not drawn as zero:\n${pie}`);
+});
+
+check("a chart note and a family note share the height budget", () => {
+  // The reported repro: the family drew into the whole height, the notes were
+  // added on top, and the guard hid the family's last rows. A note is a row of
+  // the block `height` measures, so the family must be sized after the notes.
+  const candles = [
+    { open: 10, high: 12, low: 9, close: 11 },
+    { open: "x", high: 13, low: 10, close: 12 },
+  ];
+  const lone = textRows(renderChartRows({ type: "candle", width: 40, height: 8, candles }));
+  assert.match(lone.join("\n"), /1 candle skipped/, "the family note is the visible row");
+  assert.doesNotMatch(lone.join("\n"), /row hidden at/, "the guard has nothing to hide");
+
+  // Both kinds of note at once, which is where the budget was overspent.
+  const both = textRows(
+    renderChartRows({ type: "candle", width: 40, height: 8, percent: true, candles }),
+  );
+  const text = both.join("\n");
+  assert.equal(both.length, 8, `the block is exactly the height (${both.length} rows)`);
+  assert.match(text, /1 candle skipped/, `the family note survives:\n${text}`);
+  assert.match(text, /percent is now showPercent/, `the chart note is there:\n${text}`);
+  assert.doesNotMatch(text, /row hidden at/, `nothing was hidden (${text})`);
+});
+
+check("a missing value is drawn as 0 and never called dropped", () => {
+  // `Number(null)` and `Number("")` are 0, so every family reads the value as 0
+  // and draws it. The footer must say what the chart did, not what it did not.
+  for (const missing of [null, ""]) {
+    const histogram = renderChart({ type: "histogram", width: 44, height: 8, values: [1, 2, missing, 4] });
+    assert.match(histogram, /1 non-numeric value treated as 0/, `histogram ${JSON.stringify(missing)}`);
+    assert.doesNotMatch(histogram, /dropped/, `histogram ${JSON.stringify(missing)}`);
+
+    const waterfall = renderChart({
+      type: "waterfall",
+      width: 44,
+      height: 8,
+      labels: ["Start", "Null", "Churn"],
+      values: [120, missing, -30],
+    });
+    assert.match(waterfall, /1 non-numeric value treated as 0/, `waterfall ${JSON.stringify(missing)}`);
+    assert.doesNotMatch(waterfall, /dropped/, `waterfall ${JSON.stringify(missing)}`);
+
+    // A candle and an ohlc draw the 0 price and stretch the axis to it, so the
+    // same value is drawn here too; calling it dropped was the lie.
+    for (const type of ["candle", "ohlc"]) {
+      const price = renderChart({
+        type,
+        width: 40,
+        height: 8,
+        candles: [
+          { open: 10, high: 12, low: 9, close: 11 },
+          { open: missing, high: 13, low: 10, close: 12 },
+        ],
+      });
+      assert.doesNotMatch(price, /dropped/, `${type} ${JSON.stringify(missing)}`);
+    }
+  }
+
+  // Both groups in one spec: the missing value keeps its own verb and the value
+  // no number comes out of takes the family's. A family that draws its zeros
+  // says one phrase for both.
+  const flat = (text) => text.replace(/\s+/g, " ");
+  assert.match(
+    flat(renderChart({ type: "pie", width: 44, slices: [["a", null], ["b", "x"], ["c", 2]] })),
+    /1 non-numeric value treated as 0 and 1 non-numeric value dropped/,
+  );
+  const mixedBar = flat(renderChart({ type: "bar", width: 44, values: [1, null, "x", 3] }));
+  assert.match(mixedBar, /2 non-numeric values treated as 0/, mixedBar);
+  assert.doesNotMatch(mixedBar, /dropped/, `a zero-filling bar drops nothing (${mixedBar})`);
+});
+
+check("a loss a family reports itself is not counted twice", () => {
+  // These families name what they could not draw in their own units. Counting
+  // the same rows again at chart level reported one loss as two.
+  const candles = [
+    { open: 10, high: 12, low: 9, close: 11 },
+    { open: "x", high: 13, low: 10, close: 12 },
+  ];
+  for (const type of ["candle", "candlestick", "ohlc"]) {
+    const text = renderChart({ type, width: 40, candles });
+    assert.doesNotMatch(text, /non-numeric/, `${type} counts the loss again:\n${text}`);
+    const notes = text.match(/1 candle skipped/g) ?? [];
+    assert.equal(notes.length, 1, `${type} reports its own loss once:\n${text}`);
+  }
+
+  const tree = renderChart({
+    type: "treemap",
+    width: 46,
+    items: [{ label: "API", value: "n/a" }, { label: "Web", value: 25 }],
+  });
+  assert.doesNotMatch(tree, /non-numeric/, `treemap counts the loss again:\n${tree}`);
+  assert.match(tree, /1 value omitted/, "the treemap still names what it lost");
+
+  const heat = renderChart({ type: "heatmap", width: 40, cellWidth: 2, rows: [{ label: "r", values: [1, "x"] }] });
+  assert.doesNotMatch(heat, /non-numeric/, `heatmap counts the loss again:\n${heat}`);
+});
+
 console.log(`\n${checks}/${checks} checks passed`);

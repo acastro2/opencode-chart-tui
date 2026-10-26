@@ -373,6 +373,26 @@ export const MODES = { quadrant: QUADRANT, sextant: SEXTANT, octant: OCTANT }
 
 export const FILL = "█"
 
+/** The default sub-cell grid: Unicode 13 sextants, present in every block font. */
+export const DEFAULT_MODE = "sextant"
+
+/**
+ * The table a name selects, own keys only. A name such as "constructor" is a
+ * typo, not a table, so it must not reach the prototype.
+ */
+function modeNamed(name) {
+  return typeof name === "string" && Object.hasOwn(MODES, name) ? MODES[name] : undefined
+}
+
+/**
+ * The mode a name selects, falling back to the default. The sampler uses this so
+ * a typo in a fence (`"octants"`) draws the standard grid instead of throwing out
+ * of a render; a name that is a real mode still selects that mode exactly.
+ */
+export function modeName(name, fallback = DEFAULT_MODE) {
+  return modeNamed(name) ? name : fallback
+}
+
 function fullMask(mode) {
   return (1 << (mode.columns * mode.rows)) - 1
 }
@@ -381,8 +401,11 @@ function fullMask(mode) {
  * Resample a mask into a coarser mode covering the same region. A coarse
  * sub-cell is filled when at least half of the fine sub-cells it covers are
  * filled, so the shape keeps its weight instead of growing.
+ *
+ * Exported for the tests: every shipped mode is complete, so `resolve` never
+ * reaches this fallback today.
  */
-function resample(mask, from, to) {
+export function resample(mask, from, to) {
   const ratio = from.rows / to.rows
   let out = 0
   for (let column = 0; column < to.columns; column++) {
@@ -422,21 +445,21 @@ for (const [name, mode] of Object.entries(MODES)) {
 
 /** The character for a mask of filled sub-cells. */
 export function glyphFor(mask, mode = "quadrant") {
-  const table = LOOKUPS[mode]
+  const table = modeNamed(mode) ? LOOKUPS[mode] : null
   if (!table) throw new Error(`unknown mosaic mode: ${mode}`)
   return table[mask] ?? " "
 }
 
 /** How a mode splits a cell: columns by rows of sub-cells. */
 export function modeShape(mode = "quadrant") {
-  const selected = MODES[mode]
+  const selected = modeNamed(mode)
   if (!selected) throw new Error(`unknown mosaic mode: ${mode}`)
   return { columns: selected.columns, rows: selected.rows }
 }
 
 /** True when this mode has a native glyph for every non-empty pattern. */
 export function isComplete(mode = "quadrant") {
-  const entry = MODES[mode]
+  const entry = modeNamed(mode)
   if (!entry) return false
   // Checked per mask rather than by table size: a mode is complete when no mask
   // needs the fallback chain, whatever its map happens to store for the blank.

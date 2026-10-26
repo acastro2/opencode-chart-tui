@@ -28,6 +28,8 @@ export const THEMES = {
     background: "#0b0b0b",
     /** The base a translucent tile is mixed towards (the terminal background). */
     tint: "#101010",
+    /** Default text when a run asks for no colour of its own. */
+    foreground: "#e6e6e6",
     /** Axis, grid, track, legend text and other furniture. */
     muted: "#9aa0a6",
     heat: { low: "#1f3b57", high: "#e5695f" },
@@ -37,6 +39,7 @@ export const THEMES = {
     palette: PALETTES.light,
     background: "#ffffff",
     tint: "#ffffff",
+    foreground: "#1f2328",
     muted: "#57606a",
     heat: { low: "#dbe7f3", high: "#c0432f" },
   },
@@ -53,49 +56,125 @@ export function paletteOf(spec) {
 }
 
 /**
+ * A palette lookup for one render: wraps any integer, even a negative one, and
+ * ignores an empty palette instead of dividing by zero.
+ */
+function paletteColour(palette) {
+  const list = palette.length > 0 ? palette : THEMES.dark.palette;
+  return (index) => list[((index % list.length) + list.length) % list.length];
+}
+
+/** The series colour a run asks for: its own, else its slice; null for none. */
+function fillOf(run, colour) {
+  if (typeof run.color === "string") return run.color;
+  if (!Number.isInteger(run.slice) || run.slice < 0) return null;
+  return colour(run.slice);
+}
+
+/** The colour behind a run: its own, else the other series, else the theme. */
+function behindOf(run, colour, theme) {
+  if (typeof run.background === "string") return run.background;
+  if (Number.isInteger(run.other) && run.other >= 0) return colour(run.other);
+  return theme.background;
+}
+
+/**
+ * Everything a handler needs, worked out once and in this order: a run that is
+ * malformed fails on the same property as it always did.
+ */
+function contextOf(run, palette, theme) {
+  const colour = paletteColour(palette);
+  const fill = fillOf(run, colour);
+  const behind = behindOf(run, colour, theme);
+  return { run, text: run.text ?? "", fill, behind, theme };
+}
+
+/*
+ * One handler per run kind. Each returns plain data and nothing else, so the
+ * kind contract stays readable one case at a time and testable without a
+ * terminal. Key order in the result is part of the contract: the plugin turns
+ * these into OpenTUI chunks, and a test compares them whole.
+ */
+
+/** A boundary cell: two series meet, so the glyph is one and the bed the other. */
+function edgeStyle({ text, fill, behind, theme }) {
+  return { text, fg: fill ?? theme.muted, bg: behind };
+}
+
+/** A line is the inverse of an edge: it cuts the mark out of the background. */
+function lineStyle({ text, fill, theme }) {
+  return { text, fg: theme.background, bg: fill ?? theme.muted };
+}
+
+/**
+ * A label contrasts against the block it sits on.
+ *
+ * A label outside a mark can ask for the chart background with `background`. A
+ * series-coloured block there would read as another mark, so it must not fall
+ * back to `other` the way an edge's bed does.
+ */
+function labelStyle({ text, fill, run, theme }) {
+  const background = typeof run.background === "string" ? run.background : (fill ?? theme.muted);
+  return { text, fg: contrastOn(background), bg: background };
+}
+
+/** A cell is a block of colour with nothing written in it, so it has no fg. */
+function cellStyle({ text, fill, theme }) {
+  return { text, bg: fill ?? theme.muted };
+}
+
+/** A mark's own colour, written straight onto the terminal background. */
+function markStyle({ text, fill, theme }) {
+  return { text, fg: fill ?? theme.muted };
+}
+
+/** The title is a mark's colour in bold; no colour of its own leaves fg unset. */
+function titleStyle({ text, fill }) {
+  return { text, fg: fill ?? undefined, bold: true };
+}
+
+/** Axis, grid, track and target are furniture: one muted tone for all four. */
+function furnitureStyle({ text, theme }) {
+  return { text, fg: theme.muted };
+}
+
+/** Anything else, `outside` included, is plain text in the theme's foreground. */
+function plainStyle({ text, theme }) {
+  return { text, fg: theme.foreground };
+}
+
+/**
+ * The handler for each run kind. A `Map`, not an object: a fence can write any
+ * string as a kind, and `"constructor"` must not find `Object.prototype` and
+ * return a function where a style belongs.
+ */
+const RUN_STYLES = new Map([
+  ["edge", edgeStyle],
+  ["line", lineStyle],
+  ["label", labelStyle],
+  ["cell", cellStyle],
+  ["fill", markStyle],
+  ["series", markStyle],
+  ["legend-mark", markStyle],
+  ["spoke", markStyle],
+  ["legend", markStyle],
+  ["title", titleStyle],
+  ["axis", furnitureStyle],
+  ["grid", furnitureStyle],
+  ["track", furnitureStyle],
+  ["target", furnitureStyle],
+]);
+
+/**
  * The style a run asks for, as plain data: `{ text, fg, bg, bold }`.
  *
- * This is the whole run-kind contract in one testable function. The CLI plugin
- * turns the result into OpenTUI chunks; a test can check it without a terminal.
- * Deeper rules come first: a boundary cell carries two series, so its glyph is
- * the winner's colour and its background is the other series.
+ * This is the whole run-kind contract. The CLI plugin turns the result into
+ * OpenTUI chunks; a test can check it without a terminal. Deeper rules live in
+ * the handlers: a boundary cell carries two series, so its glyph is the
+ * winner's colour and its background is the other series.
  */
 export function styleOf(run, palette = THEMES.dark.palette, theme = THEMES.dark) {
-  const list = palette.length > 0 ? palette : THEMES.dark.palette;
-  const colour = (index) => list[((index % list.length) + list.length) % list.length];
-  const own = typeof run.color === "string" ? run.color : null;
-  const fill = own ?? (Number.isInteger(run.slice) && run.slice >= 0 ? colour(run.slice) : null);
-  const behind =
-    typeof run.background === "string"
-      ? run.background
-      : Number.isInteger(run.other) && run.other >= 0
-        ? colour(run.other)
-        : theme.background;
-  const text = run.text ?? "";
-
-  switch (run.kind) {
-    case "edge":
-      return { text, fg: fill ?? theme.muted, bg: behind };
-    case "line":
-      return { text, fg: theme.background, bg: fill ?? theme.muted };
-    case "label":
-      return { text, fg: contrastOn(fill ?? theme.muted), bg: fill ?? theme.muted };
-    case "cell":
-      return { text, bg: fill ?? theme.muted };
-    case "fill":
-    case "series":
-    case "legend-mark":
-    case "spoke":
-    case "legend":
-      return { text, fg: fill ?? theme.muted };
-    case "title":
-      return { text, fg: fill ?? undefined, bold: true };
-    case "axis":
-    case "grid":
-    case "track":
-    case "target":
-      return { text, fg: theme.muted };
-    default:
-      return { text };
-  }
+  const context = contextOf(run, palette, theme);
+  const style = RUN_STYLES.get(run.kind) ?? plainStyle;
+  return style(context);
 }

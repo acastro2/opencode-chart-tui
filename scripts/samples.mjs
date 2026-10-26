@@ -41,13 +41,12 @@ export const SAMPLES = {
   scatter: { title: "Deals", points: [[1, 2], [2, 5], [3, 3], [4, 8], [5, 6], [6, 9]], height: 10 },
   heatmap: {
     title: "Ops by hour",
-    columns: ["9am", "12pm", "3pm", "6pm"],
+    headers: ["9am", "12pm", "3pm", "6pm"],
     rows: [
       { label: "Mon", values: [1, 4, 6, 2] },
       { label: "Tue", values: [2, 6, 7, 3] },
       { label: "Wed", values: [1, 3, 5, 2] },
     ],
-    cellWidth: 4,
   },
   gauge: { title: "Coverage", label: "Coverage", value: 62, max: 100 },
   progress: { title: "Sprint", label: "Done", value: 0.4, max: 1 },
@@ -103,7 +102,7 @@ export const SAMPLES = {
   },
   gantt: {
     title: "Rollout plan",
-    height: 11,
+    height: 13,
     today: "2026-11-14",
     tasks: [
       { label: "Design", group: "Discovery", start: "2026-11-02", end: "2026-11-13" },

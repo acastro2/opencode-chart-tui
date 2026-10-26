@@ -39,7 +39,7 @@
 <rect x="238.00" y="42.00" width="8.00" height="16.00" fill="#4e9de0"/>
 <rect x="246.00" y="42.00" width="8.00" height="16.00" fill="#4e9de0"/>
 <rect x="254.00" y="42.00" width="8.00" height="16.00" fill="#4e9de0"/>
-<rect x="262.00" y="42.00" width="2.00" height="16.00" fill="#4e9de0"/>
+<rect x="262.00" y="42.00" width="5.00" height="16.00" fill="#4e9de0"/>
 <rect x="270.00" y="42.00" width="8.00" height="16.00" fill="#9aa0a6" fill-opacity="0.25"/>
 <rect x="278.00" y="42.00" width="8.00" height="16.00" fill="#9aa0a6" fill-opacity="0.25"/>
 <rect x="286.00" y="42.00" width="8.00" height="16.00" fill="#9aa0a6" fill-opacity="0.25"/>
@@ -77,9 +77,16 @@
 <rect x="542.00" y="42.00" width="8.00" height="16.00" fill="#9aa0a6" fill-opacity="0.25"/>
 <rect x="550.00" y="42.00" width="8.00" height="16.00" fill="#9aa0a6" fill-opacity="0.25"/>
 <rect x="558.00" y="42.00" width="8.00" height="16.00" fill="#9aa0a6" fill-opacity="0.25"/>
-<text x="578" y="54" fill="#9aa0a6" font-size="12.5" font-family="'JetBrains Mono','SF Mono',Menlo,Consolas,'DejaVu Sans Mono',monospace" text-anchor="middle">4</text>
-<text x="586" y="54" fill="#9aa0a6" font-size="12.5" font-family="'JetBrains Mono','SF Mono',Menlo,Consolas,'DejaVu Sans Mono',monospace" text-anchor="middle">0</text>
-<text x="594" y="54" fill="#9aa0a6" font-size="12.5" font-family="'JetBrains Mono','SF Mono',Menlo,Consolas,'DejaVu Sans Mono',monospace" text-anchor="middle">.</text>
-<text x="602" y="54" fill="#9aa0a6" font-size="12.5" font-family="'JetBrains Mono','SF Mono',Menlo,Consolas,'DejaVu Sans Mono',monospace" text-anchor="middle">0</text>
-<text x="610" y="54" fill="#9aa0a6" font-size="12.5" font-family="'JetBrains Mono','SF Mono',Menlo,Consolas,'DejaVu Sans Mono',monospace" text-anchor="middle">%</text>
+<rect x="566.00" y="42.00" width="8.00" height="16.00" fill="#9aa0a6" fill-opacity="0.25"/>
+<rect x="574" y="42" width="8" height="16" fill="#4e9de0"/>
+<rect x="582" y="42" width="8" height="16" fill="#4e9de0"/>
+<text x="586" y="54" fill="#101010" font-size="12.5" font-family="'JetBrains Mono','SF Mono',Menlo,Consolas,'DejaVu Sans Mono',monospace" text-anchor="middle">4</text>
+<rect x="590" y="42" width="8" height="16" fill="#4e9de0"/>
+<text x="594" y="54" fill="#101010" font-size="12.5" font-family="'JetBrains Mono','SF Mono',Menlo,Consolas,'DejaVu Sans Mono',monospace" text-anchor="middle">0</text>
+<rect x="598" y="42" width="8" height="16" fill="#4e9de0"/>
+<text x="602" y="54" fill="#101010" font-size="12.5" font-family="'JetBrains Mono','SF Mono',Menlo,Consolas,'DejaVu Sans Mono',monospace" text-anchor="middle">.</text>
+<rect x="606" y="42" width="8" height="16" fill="#4e9de0"/>
+<text x="610" y="54" fill="#101010" font-size="12.5" font-family="'JetBrains Mono','SF Mono',Menlo,Consolas,'DejaVu Sans Mono',monospace" text-anchor="middle">0</text>
+<rect x="614" y="42" width="8" height="16" fill="#4e9de0"/>
+<text x="618" y="54" fill="#101010" font-size="12.5" font-family="'JetBrains Mono','SF Mono',Menlo,Consolas,'DejaVu Sans Mono',monospace" text-anchor="middle">%</text>
 </svg>

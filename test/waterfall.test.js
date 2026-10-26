@@ -13,10 +13,36 @@ const check = (name, fn) => {
 const textRows = (rows) => rows.map((row) => runsText(row.runs));
 const cellsOf = (row) => [...row];
 
+/** A drawn bar cell: a block or shade, not a connector, a digit or the legend. */
+const isBar = (cell) => {
+  if (!cell || cell === " ") return false;
+  const point = cell.codePointAt(0);
+  return (
+    (point >= 0x2580 && point <= 0x259f) ||
+    (point >= 0x1fb00 && point <= 0x1fbff) ||
+    (point >= 0x1cc00 && point <= 0x1cebf)
+  );
+};
+
+/** Columns that carry a bar, grouped into runs of adjacent columns. */
+const barGroupsOf = (rows) => {
+  const columns = new Set();
+  for (const row of rows) {
+    for (const [x, cell] of cellsOf(row).entries()) if (isBar(cell)) columns.add(x);
+  }
+  const groups = [];
+  for (const x of [...columns].sort((a, b) => a - b)) {
+    const last = groups[groups.length - 1];
+    if (last && x - last[last.length - 1] <= 1) last.push(x);
+    else groups.push([x]);
+  }
+  return groups;
+};
+
 const spec = {
   type: "waterfall",
   width: 48,
-  height: 9,
+  plotHeight: 9,
   title: "ARR movement",
   labels: ["Start", "New", "Churn", "Expansion"],
   values: [120, 45, -30, 25],
@@ -133,6 +159,133 @@ check("every drawn cell is a real block pattern", () => {
       assert.ok(canvas, `"${cell}" U+${point.toString(16)} is not a block or a connector`);
     }
   }
+});
+
+check("each label sits under its own bar", () => {
+  const spec = {
+    type: "waterfall",
+    width: 64,
+    height: 9,
+    labels: ["Jan", "Feb", "Mar", "Apr"],
+    values: [120, 45, -30, 25],
+  };
+  const rows = textRows(renderWaterfallRows(spec));
+  const labelRow = rows[rows.length - 2];
+  const groups = barGroupsOf(rows.slice(0, -2));
+  assert.equal(groups.length, 5, `four deltas plus the total, found ${groups.length}`);
+  for (const [index, label] of [...spec.labels, "Total"].entries()) {
+    const at = labelRow.indexOf(label);
+    assert.ok(at >= 0, `${label} is drawn`);
+    const group = groups[index];
+    const markCentre = (group[0] + group[group.length - 1]) / 2;
+    const labelCentre = at + (cols(label) - 1) / 2;
+    assert.ok(Math.abs(labelCentre - markCentre) <= 1, `${label} sits at ${labelCentre}, its bar at ${markCentre}`);
+  }
+});
+
+check("twenty steps at width 16 fill the plot and stay inside it", () => {
+  const many = {
+    type: "waterfall",
+    width: 16,
+    height: 9,
+    labels: Array.from({ length: 20 }, (_, index) => `S${index}`),
+    values: Array.from({ length: 20 }, (_, index) => (index % 3 === 0 ? -5 : 8)),
+  };
+  const rows = textRows(renderWaterfallRows(many));
+  assert.ok(rows.length > 0, "the chart renders");
+  for (const row of rows) assert.ok(cols(row) <= many.width, `"${row}" is ${cols(row)} of ${many.width}`);
+
+  // One mark per step: each step gets at least one sub-column, so no step can be
+  // lost when the column runs out. The grid bounds check stops a write wrapping
+  // into the next row instead.
+  const gutter = rows[0].indexOf("┤") + 1;
+  const drawn = new Set();
+  for (const row of rows) {
+    for (const [x, cell] of cellsOf(row).entries()) if (isBar(cell) && x >= gutter) drawn.add(x);
+  }
+  const columns = [...drawn].sort((a, b) => a - b);
+  assert.ok(columns.length >= Math.ceil(many.labels.length / 2), `every step keeps a mark (${columns.length} columns)`);
+  assert.ok(columns.length <= many.width - gutter, `the bars stay inside the plot (${columns.length})`);
+  for (let index = 1; index < columns.length; index++) {
+    assert.ok(columns[index] - columns[index - 1] <= 1, `the bars are contiguous at column ${columns[index]}`);
+  }
+});
+
+check("a narrow waterfall reports the category labels it thinned", () => {
+  const many = {
+    type: "waterfall",
+    width: 16,
+    height: 9,
+    labels: Array.from({ length: 20 }, (_, index) => `S${index}`),
+    values: Array.from({ length: 20 }, (_, index) => (index % 3 === 0 ? -5 : 8)),
+  };
+  const rows = textRows(renderWaterfallRows(many));
+  const labelRow = rows.find((row) => row.includes("S0"));
+  assert.ok(labelRow, "the category row is drawn");
+  const shown = new Set(labelRow.trim().split(/\s+/)).size;
+  const note = rows.find((row) => /labels hidden/.test(row));
+  assert.ok(note, "the footer says labels were hidden");
+  // Twenty steps plus the total row: every label the row did not draw is hidden.
+  const expected = many.labels.length + 1 - shown;
+  assert.match(note, new RegExp(`^${expected} labels hidden$`), `"${note}" counts the hidden labels`);
+  for (const row of rows) assert.ok(cols(row) <= many.width, `"${row}" is ${cols(row)} of ${many.width}`);
+
+  const wide = textRows(renderWaterfallRows({ ...many, width: 100, height: 9 }));
+  assert.ok(!wide.some((row) => /labels? hidden/.test(row)), "a chart that fits every label says nothing");
+});
+
+check("a narrow legend is cut to the width and says an entry was left out", () => {
+  const narrow = { ...spec, width: 16, height: 7 };
+  const rows = textRows(renderWaterfallRows(narrow));
+  const legend = rows.find((row) => row.includes("up") || row.includes("down"));
+  assert.ok(legend, "the legend is drawn");
+  assert.ok(cols(legend) <= narrow.width, `"${legend}" is ${cols(legend)} of ${narrow.width}`);
+  assert.match(legend, /…/, "the row shows that an entry was left out");
+  assert.ok(!legend.includes("total"), "the entry that did not fit is gone");
+});
+
+check("two value labels never touch", () => {
+  for (const width of [16, 24, 30, 48]) {
+    const rows = textRows(renderWaterfallRows({ ...spec, width, height: 9 }));
+    for (const row of rows) {
+      assert.ok(!/[0-9][-+][0-9]/.test(row), `"${row}" has two numbers running together at width ${width}`);
+    }
+  }
+});
+
+check("wide labels stay inside a narrow waterfall", () => {
+  const wide = { type: "waterfall", width: 26, height: 8, labels: ["开始", "增长", "流失"], values: [120, 45, -30] };
+  const rows = textRows(renderWaterfallRows(wide));
+  for (const row of rows) assert.ok(cols(row) <= wide.width, `"${row}" is ${cols(row)} of ${wide.width}`);
+  const labels = rows.find((row) => row.includes("开始"));
+  assert.ok(labels, "the first wide label is drawn");
+  assert.equal(cols(labels), wide.width, "the label row is measured in cells, not code units");
+});
+
+check("height is the total block, not just the plot", () => {
+  const rows = textRows(renderWaterfallRows({ ...spec, plotHeight: undefined, height: 9 }));
+  assert.ok(rows.length <= 9, `height 9 drew ${rows.length} rows`);
+});
+
+check("plotHeight keeps the plot height while height stays total", () => {
+  const rows = textRows(renderWaterfallRows({ ...spec, height: 20, plotHeight: 9 }));
+  assert.ok(rows.length <= 20, `height 20 drew ${rows.length} rows`);
+});
+
+check("a wide waterfall keeps every category label", () => {
+  const wide = {
+    type: "waterfall",
+    width: 76,
+    height: 10,
+    labels: ["Start", "New", "Churn", "Expansion"],
+    values: [120, 45, -30, 25],
+  };
+  const rows = textRows(renderWaterfallRows(wide));
+  const text = rows.join("\n");
+  for (const label of ["Start", "New", "Churn", "Expansion", "Total"]) {
+    assert.ok(text.includes(label), `${label} is drawn`);
+  }
+  assert.ok(!/label hidden/i.test(text), "nothing is reported hidden when the row has room");
 });
 
 console.log(`\n${checks}/${checks} checks passed`);
