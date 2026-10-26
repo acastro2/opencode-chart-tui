@@ -8,6 +8,11 @@
 // stays text, in a monospace stack.
 //
 // Writes assets/<type>.svg, or assets/light/<type>.svg with --theme light.
+//
+// One picture per family, from the 23 gallery samples only. The README gallery
+// is a 23-card grid and `assets/` is its source of truth; an edge spec here
+// would add a file with no family name and no card. Edge behaviour is checked
+// by audit, fidelity and the run goldens, which do not need a picture.
 
 import { mkdirSync, writeFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
@@ -15,7 +20,7 @@ import { fileURLToPath } from "node:url";
 import { renderChartRows } from "../src/chart.js";
 import { styleOf, themeOf } from "../src/theme.js";
 import { availableModes, glyphFor, modeShape } from "../src/mosaic.js";
-import { SAMPLES } from "./samples.mjs";
+import { SAMPLES } from "./corpus.mjs";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const args = process.argv.slice(2);

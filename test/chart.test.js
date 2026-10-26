@@ -287,13 +287,26 @@ check("a missing value is drawn as 0 and never called dropped", () => {
     }
   }
 
-  // Both groups in one spec: the missing value keeps its own verb and the value
-  // no number comes out of takes the family's. A family that draws its zeros
-  // says one phrase for both.
+  // Both groups in one spec: a waterfall keeps a blank as a zero and drops a
+  // value no number comes out of, so the two groups are counted apart. A pie
+  // gives both the same fate, so it says one phrase instead.
   const flat = (text) => text.replace(/\s+/g, " ");
   assert.match(
-    flat(renderChart({ type: "pie", width: 44, slices: [["a", null], ["b", "x"], ["c", 2]] })),
+    flat(
+      renderChart({
+        type: "waterfall",
+        width: 44,
+        height: 8,
+        labels: ["Start", "Null", "Bad"],
+        values: [null, "x", -30],
+      }),
+    ),
     /1 non-numeric value treated as 0 and 1 non-numeric value dropped/,
+  );
+  assert.match(
+    flat(renderChart({ type: "pie", width: 44, slices: [["a", null], ["b", "x"], ["c", 2]] })),
+    /2 non-numeric values dropped/,
+    "a pie drops a blank and an unreadable value alike, so no slice is drawn as 0",
   );
   const mixedBar = flat(renderChart({ type: "bar", width: 44, values: [1, null, "x", 3] }));
   assert.match(mixedBar, /2 non-numeric values treated as 0/, mixedBar);
@@ -324,6 +337,37 @@ check("a loss a family reports itself is not counted twice", () => {
 
   const heat = renderChart({ type: "heatmap", width: 40, cellWidth: 2, rows: [{ label: "r", values: [1, "x"] }] });
   assert.doesNotMatch(heat, /non-numeric/, `heatmap counts the loss again:\n${heat}`);
+});
+
+check("a scatter reports a skipped point once, not twice", () => {
+  // `points` is line's list and it prints its own count. The dispatcher used to
+  // scan the same list under the family policy and add a second, wrong sentence.
+  const rows = textRows(renderChartRows({ type: "scatter", width: 44, height: 9, points: [[null, 5], [2, 3]] }));
+  const text = rows.join("\n");
+  assert.match(text, /1 point skipped/, `the family note is missing:\n${text}`);
+  assert.doesNotMatch(text, /non-numeric/, `the same loss is counted twice:\n${text}`);
+});
+
+check("a gauge's scalar is data too", () => {
+  // A scalar is not a list, but an unreadable value still has to be reported.
+  const text = textRows(renderChartRows({ type: "gauge", width: 40, value: Infinity })).join("\n");
+  assert.match(text, /treated as 0/, `the coerced scalar is silent:\n${text}`);
+  const ok = textRows(renderChartRows({ type: "gauge", width: 40, value: 62 })).join("\n");
+  assert.doesNotMatch(ok, /non-numeric/, `a good value is reported:\n${ok}`);
+});
+
+check("the height guard keeps its count at a narrow width", () => {
+  // The guard wraps its sentence and keeps the first line, so at 20–24 cells it
+  // used to say "1 row hidden at" — a sentence that stops mid-thought.
+  const labels = Array.from({ length: 30 }, (_, index) => `S${index}`);
+  for (const width of [16, 20, 24]) {
+    const rows = textRows(renderChartRows({
+      type: "bar", width, height: 4, labels, values: labels.map((_, index) => index + 1),
+    }));
+    const last = rows[rows.length - 1];
+    assert.match(last, /\d+ rows? hidden/, `width ${width}: "${last}"`);
+    assert.doesNotMatch(last, /hidden at\s*$/, `width ${width} stops mid-sentence: "${last}"`);
+  }
 });
 
 console.log(`\n${checks}/${checks} checks passed`);

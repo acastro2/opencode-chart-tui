@@ -37,7 +37,7 @@ import {
 } from "./core.js";
 import { axisRow, baseline, buildAxis, categoryRow, pointLabelRow, valueAtRow } from "./axis.js";
 import { themeOf } from "./theme.js";
-import { plotRows as plotRowsFor } from "./layout.js";
+import { layoutFor } from "./layout.js";
 
 const LEFT = ["▏", "▎", "▍", "▌", "▋", "▊", "▉"]; // filled from the left
 const TRACK = "░";
@@ -127,7 +127,10 @@ function planColumns(labels, seriesCount, stacked, available) {
   const barWidth = barWidthFor(perLabel, gap, stacked, seriesCount);
   const groupWidth = stacked ? barWidth : barWidth * seriesCount;
   const used = labels.length * (groupWidth + gap) - gap;
-  const leftPad = Math.max(0, Math.floor((available - used) / 2));
+  // Marks start at the axis, not centred in the leftover space. Centring reads
+  // as "the chart begins halfway across", and at 160 columns a three-category
+  // chart floated away from its own axis.
+  const leftPad = 0;
   const { columns, starts } = columnSlots(labels.length, groupWidth, gap, leftPad, barWidth, stacked);
   return { columns, starts, barWidth, groupWidth, gap, leftPad, used };
 }
@@ -177,10 +180,13 @@ function verticalPlan(spec, width, labels, series, noteRow = false) {
   // the width cannot hold. The note is a row too, so it is reserved here rather
   // than read from the spec: a fence key must never change the plot.
   const legendRows = legendRowsFor(spec, series.length);
-  const plotRows = plotRowsFor(spec, {
-    chrome: (spec.title ? 1 : 0) + 1 + legendRows + (noteRow ? 1 : 0),
+  const plotRows = layoutFor(spec, {
+    title: spec.title ? 1 : 0,
+    labels: 1,
+    legend: legendRows,
+    notes: noteRow ? 1 : 0,
     fallback: 9,
-  });
+  }).plotRows;
   const normalized = spec.normalized === true;
   const shown = shownSeries(spec, series, labels.length);
   const stacked = isStacked(spec);
@@ -221,21 +227,55 @@ function labelRow(spec, plan, labels) {
 }
 
 /**
- * The row of labels under a vertical bar chart, as text. A caller whose labels
- * are longer than a bar slot (bin ranges) asks this first, so it can keep the
- * short labels when the long ones collide instead of guessing at the geometry.
+ * The bar fence a caller's own series is drawn with: no title (the caller
+ * prints its own), no legend, no percentages, and labels thinned rather than cut
+ * down to a slot. A fresh object, so nothing the caller's fence carries (its
+ * `series`, a `stacked`) leaks into the bar chart of its values.
  */
-export function verticalLabelRow(spec, width, labels, series) {
-  return labelRow(spec, verticalPlan(spec, width, labels, series), labels);
+function suppliedSeriesSpec(spec, plotHeight) {
+  return {
+    type: "bar",
+    width: Math.max(16, Math.floor(spec.width ?? 48)),
+    plotHeight,
+    ticks: spec.ticks,
+    mosaic: spec.mosaic,
+    textured: spec.textured,
+    gap: spec.gap,
+    showPercent: false,
+    legend: false,
+    valueLabels: spec.valueLabels === true,
+    slotLabels: false,
+  };
 }
 
 /**
- * How many of `labels` the vertical layout would hide at this width. A caller
- * that hands the bar a plot budget of its own (the histogram) asks this so it
- * can reserve the note row; the rule itself stays in one place, `fitVisible`.
+ * How a vertical bar chart would draw `values` under `labels`, measured without
+ * drawing it: the label row as text, how many labels the width hides, and the
+ * fence to draw them with. This is the one query a caller with its own series
+ * (the histogram) needs, so it never assembles a bar spec just to measure it.
+ *
+ * `notes` is the rows the caller prints around the plot besides the title (its
+ * footer). The ledger pays for the title, the label row and those rows before
+ * the plot, so the whole block keeps the height it promised. A note the width
+ * forces out is a row too: the fence comes back with a plot one row shorter, so
+ * the caller's block still fits.
+ *
+ * With no `height` or `plotHeight` the plot falls back to 8 rows.
  */
-export function hiddenCategoryCount(spec, width, labels, series) {
-  return verticalPlan(spec, width, labels, series).hidden;
+export function measureVerticalBars(spec, labels, values, { notes = 0 } = {}) {
+  const counts = { title: spec.title ? 1 : 0, labels: 1, notes, fallback: 8 };
+  const plot = layoutFor(spec, counts).plotRows;
+  const fence = suppliedSeriesSpec(spec, plot);
+  const plan = verticalPlan(fence, fence.width, labels, [{ name: "count", values }]);
+  const noteCostsARow = plan.hidden > 0 && Number(spec.height) > 0 && spec.plotHeight == null;
+  // Retry with the hidden-category note reserved, so its row comes out of the
+  // same ledger and the caller prints exactly `height` rows.
+  const fitted = noteCostsARow ? layoutFor(spec, { ...counts, notes: notes + 1 }).plotRows : plot;
+  return {
+    labelRow: labelRow(fence, plan, labels),
+    hidden: plan.hidden,
+    spec: { ...fence, plotHeight: fitted },
+  };
 }
 
 /**
@@ -353,10 +393,20 @@ function stampBarValues(cells, plan, series) {
 }
 
 /** The zero row is a data row too: a bar under one row tall lives here. */
-function zeroRowRuns(axis, cells) {
+function zeroRowRuns(axis, cells, above, below) {
   const line = baseline(axis, cells.length);
   const mark = line.line[0] ?? "─";
-  const filled = cells.map((cell) => cell ?? { slice: -1, char: mark, kind: "axis", mask: 0 });
+  // The axis line runs through the middle of this row, so a bar that rises from
+  // zero owns the upper half of the cell and one that falls owns the lower half.
+  // A full block here hung half a cell below the line, which reads as "the bar
+  // starts under zero".
+  const filled = cells.map((cell, column) => {
+    if (!cell) return { slice: -1, char: mark, kind: "axis", mask: 0 };
+    const up = Boolean(above?.[column]);
+    const down = Boolean(below?.[column]);
+    const char = up && down ? "█" : down ? "▄" : "▀";
+    return { ...cell, char };
+  });
   return [axisRun(`${line.text}${line.mark}`), ...cellsToRuns(filled)];
 }
 
@@ -369,7 +419,10 @@ function dataRowRuns(axis, cells, row) {
 function verticalRows(axis, cells, width) {
   return cells.map((line, row) => ({
     width,
-    runs: row === axis.zeroRow ? zeroRowRuns(axis, line) : dataRowRuns(axis, line, row),
+    runs:
+      row === axis.zeroRow
+        ? zeroRowRuns(axis, line, cells[row - 1], cells[row + 1])
+        : dataRowRuns(axis, line, row),
   }));
 }
 

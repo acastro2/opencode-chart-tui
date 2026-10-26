@@ -382,4 +382,18 @@ check("a cycle is reported as a back edge, and the layering still finishes", () 
   assert.deepEqual(normalizeSankey({ links: [{ from: "x", to: "x", value: 1 }] }).cycles, []);
 });
 
+check("a wide sankey uses the width instead of hugging the labels", () => {
+  // The gaps cap out to keep bands readable; before this the leftover was
+  // discarded, so a 120-cell chart drew in about 50 cells.
+  const width = 120;
+  const rows = renderSankeyRows({ ...spec(), width, height: 14 });
+  const texts = textRows(rows);
+  const furthest = Math.max(...texts.map((row) => {
+    const trimmed = row.replace(/\s+$/, "");
+    return cols(trimmed);
+  }));
+  assert.ok(furthest >= width - 12, `the flow stops at ${furthest} of ${width} cells`);
+  for (const row of texts) assert.ok(cols(row) <= width, "no row is wider than the chart");
+});
+
 console.log(`\n${checks}/${checks} checks passed`);

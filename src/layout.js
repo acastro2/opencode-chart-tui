@@ -32,13 +32,18 @@ function wholeCells(value) {
  * width now falls back to the default cap, so the answer is always a whole
  * number of cells, at least the floor.
  *
+ * A box narrower than the floor is treated as unmeasured too: a pane that narrow
+ * cannot show a chart, and a transient 0 from a re-layout used to redraw the
+ * chart tiny and then back.
+ *
  * @param {number} available cells the box offers
  * @param {object} [options]
  * @param {number} [options.cap] widest this family may draw
  * @param {number} [options.pinned] the fence's own `width`, which wins over the box
  */
 export function measureWidth(available, { cap = DEFAULT_CHART_WIDTH, pinned } = {}) {
-  const box = wholeCells(available) ?? DEFAULT_CHART_WIDTH;
+  const measured = wholeCells(available);
+  const box = measured === null || measured < MIN_CHART_WIDTH ? DEFAULT_CHART_WIDTH : measured;
   const limit = Math.max(MIN_CHART_WIDTH, wholeCells(cap) ?? DEFAULT_CHART_WIDTH);
   const wanted = wholeCells(pinned);
   const target = wanted !== null && wanted > 0 ? wanted : Math.min(box, limit);
@@ -75,4 +80,50 @@ export function plotRows(spec, { chrome = 0, fallback = 10, min = 3, max = 30 } 
   const total = Number(spec?.height);
   if (Number.isFinite(total) && total > 0) return clamp(Math.floor(total) - Math.max(0, chrome), min, max);
   return clamp(Math.floor(fallback), min, max);
+}
+
+/**
+ * The row ledger: how many rows the plot gets, and how many the notes get.
+ *
+ * Families used to do this arithmetic themselves, each with its own `chrome`
+ * formula, and the dispatcher subtracted chart-level notes on top — two ledgers
+ * counting the same rows. This is the one ledger.
+ *
+ * A family states its chrome as counts. Notes are data-loss reports, so they are
+ * paid for before the plot: a plot row that hides a warning is a bad trade. When
+ * even that cannot fit, `truncated` says so instead of letting a family believe
+ * it stayed inside the height.
+ *
+ * @param {object} spec the fence body
+ * @param {object} counts
+ * @param {number} [counts.title] title rows
+ * @param {number} [counts.labels] axis or category label rows
+ * @param {number} [counts.legend] legend rows
+ * @param {number} [counts.notes] note rows the family will print
+ * @param {number} [counts.fallback] plot rows when neither height nor plotHeight is set
+ * @param {number} [counts.min] smallest plot the family can draw
+ * @param {number} [counts.max] largest plot the family will draw
+ * @returns {{plotRows: number, noteRows: number, chrome: number, total: number, truncated: boolean}}
+ */
+export function layoutFor(spec, { title = 0, labels = 0, legend = 0, notes = 0, fallback = 10, min = 3, max = 30 } = {}) {
+  const chrome = Math.max(0, title) + Math.max(0, labels) + Math.max(0, legend);
+  const noteRows = Math.max(0, notes);
+
+  const explicit = Number(spec?.plotHeight);
+  if (Number.isFinite(explicit) && explicit > 0) {
+    const plot = clamp(Math.floor(explicit), min, max);
+    return { plotRows: plot, noteRows, chrome, total: chrome + plot + noteRows, truncated: false };
+  }
+
+  const height = Number(spec?.height);
+  if (!Number.isFinite(height) || height <= 0) {
+    const plot = clamp(Math.floor(fallback), min, max);
+    return { plotRows: plot, noteRows, chrome, total: chrome + plot + noteRows, truncated: false };
+  }
+
+  const limit = Math.floor(height);
+  const budget = Math.max(0, limit - chrome);
+  const plot = clamp(budget - noteRows, min, max);
+  const total = chrome + plot + noteRows;
+  return { plotRows: plot, noteRows, chrome, total, truncated: total > limit };
 }

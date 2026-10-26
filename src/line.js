@@ -29,7 +29,8 @@ import {
   truncate,
 } from "./core.js";
 import { axisRow, buildAxis, pointLabelRow, subRowOf, subRowValue } from "./axis.js";
-import { plotRows as plotRowsFor } from "./layout.js";
+import { layoutFor, plotRows as plotRowsFor } from "./layout.js";
+import { POINTS_POLICY, coerce } from "./values.js";
 
 const BLOCKS = ["▁", "▂", "▃", "▄", "▅", "▆", "▇", "█"];
 
@@ -519,6 +520,10 @@ function inlineValuesWanted(spec, series, labelGutter) {
 /**
  * Rows for a plot area drawn from a sub-cell grid: the gutter, the plot, the
  * zero line where the plot is empty, and the category labels.
+ *
+ * `endLabels` is the plan to draw. The line family plans it before it picks a
+ * plot size, because a dropped name costs a note row of the block; a caller that
+ * hands no plan (the scatter) gets the plan for this grid.
  */
 function plotRowsFromGrid(options) {
   const { spec, width, axis, available, sampler, grid, series, labels, positions, labelGutter = 0, endTops = null } =
@@ -530,7 +535,12 @@ function plotRowsFromGrid(options) {
 
   // The names sit in their own gutter, so they can never take a data cell. The
   // last row is the x labels, so the whole plot is above it.
-  const endLabels = labelGutter > 0 ? planEndLabels(series, axis, labelGutter, endTops) : null;
+  const endLabels =
+    options.endLabels === undefined
+      ? labelGutter > 0
+        ? planEndLabels(series, axis, labelGutter, endTops)
+        : null
+      : options.endLabels;
 
   const rows = plotBodyRows(cells, axis, { width, available, labelGutter, endLabels });
   rows.push(...xLabelRows(labels, available, positions, axis, width));
@@ -540,21 +550,30 @@ function plotRowsFromGrid(options) {
 
 // --- scatter ---------------------------------------------------------------
 
+/**
+ * One point from its pair, or null when either end cannot be read. Both ends
+ * are strict: `Number(null)` is 0, and a blank x is not the origin.
+ */
+function readPoint(pair) {
+  const x = coerce(pair?.[0], POINTS_POLICY).value;
+  const y = coerce(pair?.[1], POINTS_POLICY).value;
+  return x === null || y === null ? null : { x, y };
+}
+
 /** Points from the fence's `points`, or one per value when no points were given. */
 function normalizePoints(given, series) {
   if (given.length > 0) {
     const points = [];
     let dropped = 0;
-    for (const point of given) {
+    for (const pair of given) {
       // A pair like ["Jan", 5] used to become x=0 through `Number(...) || 0`,
       // which drew the point in the wrong place and said nothing.
-      const x = Number(point?.[0]);
-      const y = Number(point?.[1]);
-      if (!Number.isFinite(x) || !Number.isFinite(y)) {
+      const point = readPoint(pair);
+      if (point === null) {
         dropped += 1;
         continue;
       }
-      points.push({ x, y });
+      points.push(point);
     }
     return { points, dropped };
   }
@@ -699,7 +718,11 @@ function resolveWidth(spec) {
   return Math.max(16, Math.floor(spec.width ?? 48));
 }
 
-/** The fence's `points`, and how many entries cannot be drawn at all. */
+/**
+ * The fence's `points`, and how many entries cannot be drawn at all. This is the
+ * shape gate: a point has to be a pair. What its two ends are worth is
+ * `readPoint`'s call under `POINTS_POLICY`, and its count joins this one.
+ */
 function pointsFrom(spec) {
   if (!Array.isArray(spec.points)) return { points: [], dropped: 0 };
   const points = [];
@@ -734,11 +757,14 @@ function isBandChart(spec, type) {
   return spec.stacked === true && type === "area";
 }
 
-/** Rows taken by the title, the x label row and the legend. */
+/** Rows taken by the title, the x label row and the legend, as ledger counts. */
 function seriesChrome(spec, series, labels) {
-  const title = spec.title ? 1 : 0;
-  const labelRows = labels.length > 0 ? 1 : 0;
-  return title + labelRows + legendStorage(spec, series);
+  return { title: spec.title ? 1 : 0, labels: labels.length > 0 ? 1 : 0, legend: legendStorage(spec, series) };
+}
+
+/** The plot rows a line chart's whole block leaves, after its chrome and notes. */
+function seriesPlotRows(spec, series, labels, notes) {
+  return layoutFor(spec, { ...seriesChrome(spec, series, labels), notes, fallback: 10 });
 }
 
 function plotAxis(spec, series, labels, plotRows, bands) {
@@ -754,9 +780,12 @@ function shownSeries(spec, series, labels) {
   return spec.normalized === true ? toPercent(series, labels.length) : series;
 }
 
-function linePlotRows(spec, width, labels, series, type) {
-  const bands = isBandChart(spec, type);
-  const plotRows = plotRowsFor(spec, { chrome: seriesChrome(spec, series, labels), fallback: 10 });
+/**
+ * One plot at one plot size: the axis, the value grid, and the end-label plan
+ * that size allows. The plan is made here because it decides whether a note row
+ * is needed, and the note is paid for before the plot size is final.
+ */
+function laidOutPlot(spec, width, labels, series, { bands, fill }, plotRows) {
   const axis = plotAxis(spec, series, labels, plotRows, bands);
   // The series names get their own right gutter; the plot is what is left, so
   // the last point sits at the last column before the gutter.
@@ -770,9 +799,46 @@ function linePlotRows(spec, width, labels, series, type) {
     axis,
     subColumns: available * sampler.shape.columns,
     subRows: axis.plotRows * sampler.shape.rows,
-    fill: type === "area" && !bands,
+    fill,
   });
-  return plotRowsFromGrid({ spec, width, axis, available, sampler, grid, series, labels, labelGutter, endTops });
+  const endLabels = labelGutter > 0 ? planEndLabels(series, axis, labelGutter, endTops) : null;
+  return { axis, labelGutter, available, sampler, grid, endTops, endLabels };
+}
+
+function linePlotRows(spec, width, labels, series, type) {
+  const bands = isBandChart(spec, type);
+  const shape = { bands, fill: type === "area" && !bands };
+  const build = (plotRows) => laidOutPlot(spec, width, labels, series, shape, plotRows);
+
+  // A name that finds no free row is reported in a note, and that note is a row
+  // of the block: it is paid for before the plot size is final, never appended
+  // past a height the plot already spent. The plan is known only once a plot is
+  // laid out, so the plot is built once for its plan. When a name was dropped,
+  // the note takes a plot row and the plot is rebuilt: one row fewer can only
+  // lose more names, so the second plan still has a note to print. A block that
+  // cannot fit even at the plot's minimum keeps its note and lets the
+  // dispatcher's guard name the hidden rows, so no loss goes unsaid.
+  const ledger = seriesPlotRows(spec, series, labels, 0);
+  let plot = build(ledger.plotRows);
+  if (plot.endLabels && plot.endLabels.dropped > 0 && !ledger.truncated) {
+    const reserved = seriesPlotRows(spec, series, labels, 1);
+    const redrawn = build(reserved.plotRows);
+    if (redrawn.endLabels && redrawn.endLabels.dropped > 0) plot = redrawn;
+  }
+
+  return plotRowsFromGrid({
+    spec,
+    width,
+    axis: plot.axis,
+    available: plot.available,
+    sampler: plot.sampler,
+    grid: plot.grid,
+    series,
+    labels,
+    labelGutter: plot.labelGutter,
+    endTops: plot.endTops,
+    endLabels: plot.endLabels,
+  });
 }
 
 /** The three plot families. Scatter and sparkline take their own path. */

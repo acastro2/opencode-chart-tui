@@ -29,7 +29,7 @@ import {
   truncate,
 } from "./core.js";
 import { themeOf } from "./theme.js";
-import { plotRows as plotRowsFor } from "./layout.js";
+import { layoutFor } from "./layout.js";
 
 /** A radar needs at least three axes before it is a shape. */
 const MIN_AXES = 3;
@@ -92,17 +92,18 @@ function noteRowCountOf(clamped, clipped, seriesCount, filled) {
  * The frame the polygon lives in: how tall the block is and where the ellipse
  * sits. A wide frame must not stretch the polygon into a pancake, so the height
  * has a cap and the horizontal radius follows it. `legendHeight` and `notes` are
- * the rows the caller reserved around the plot.
+ * the rows the ledger reserves around the plot; the title is the spec's own.
  */
 function radarFrameOf(spec, { width, legendHeight, notes }) {
   const aspect = Number(spec.cellAspect) > 0 ? Number(spec.cellAspect) : 2;
-  const chrome = (spec.title ? 1 : 0) + legendHeight + notes;
-  const height = plotRowsFor(spec, {
-    chrome,
+  const height = layoutFor(spec, {
+    title: spec.title ? 1 : 0,
+    legend: legendHeight,
+    notes,
     fallback: Math.min(22, Math.round((width - 12) / aspect) + 3),
     min: 6,
     max: 30,
-  });
+  }).plotRows;
   const padX = Math.min(11, Math.max(4, Math.floor(width * 0.22)));
   const radiusX = Math.max(2, Math.min((width - 2 * padX) / 2, height - 1.5));
   return {

@@ -15,7 +15,7 @@
         "line", "area", "sparkline", "scatter",
         "heatmap", "gauge", "progress",
         "waterfall", "table",
-        "radar", "treemap", "sankey", "kanban"
+        "radar", "treemap", "sankey", "kanban", "gantt"
       ]
     },
     "title": { "type": "string", "description": "Bold heading above the chart." },
@@ -25,13 +25,16 @@
     "theme": { "enum": ["dark", "light"], "description": "Colour set. Defaults to the terminal theme." },
     "palette": { "type": "array", "items": { "type": "string", "pattern": "^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$" }, "description": "Overrides the theme palette." },
     "mosaic": { "enum": ["sextant", "octant", "quadrant", false], "description": "Sub-cell glyph set. Default sextant (Unicode 13); octant is finer but Unicode 16, so only use it when the font is known to carry it." },
-    "legend": { "type": "boolean", "default": true },
+    "cellAspect": { "type": "number", "exclusiveMinimum": 0, "description": "A cell's height over its width, for the round families (pie, radar). Default 2; a font that draws them tall wants about 2.3." },
+    "legend": { "type": "boolean", "default": true, "description": "Show the series legend. Default true." },
     "labels": { "type": "array", "items": { "type": "string" }, "description": "Category names or axis names, in data order." },
+    "name": { "type": "string", "description": "Name of the single series built from values. A series item carries its own name." },
     "values": {
       "oneOf": [
         { "type": "array", "items": { "type": "number" } },
-        { "type": "array", "items": { "type": "array", "items": { "type": "number" } }, "description": "Candles as [open, high, low, close] per period." }
-      ]
+        { "type": "array", "items": { "type": "array", "items": { "type": "number" }, "description": "Candles as [open, high, low, close] per period." } }
+      ],
+      "description": "The numbers, one array or one array per series. A nested [open, high, low, close] row is candle data."
     },
     "series": {
       "type": "array",
@@ -42,7 +45,8 @@
           "name": { "type": "string" },
           "values": { "type": "array", "items": { "type": "number" } }
         }
-      }
+      },
+      "description": "Named series, [{name, values}]. Wins over values."
     },
     "slices": { "type": "array", "items": { "type": "array", "prefixItems": [{ "type": "string" }, { "type": "number" }] }, "description": "Pie and donut data, as [label, value] pairs." },
     "points": { "type": "array", "items": { "type": "array", "prefixItems": [{ "type": "number" }, { "type": "number" }] }, "description": "Scatter data, as [x, y] pairs." },
@@ -51,20 +55,33 @@
     "showPercent": { "type": "boolean", "description": "Single-series bars: print the share beside each value. (The old name 'percent' is accepted and renamed with a note.)" },
     "boundaryColor": { "type": "string", "description": "Colour of the seam between two series. Defaults to the theme background. (The old name 'gap' is accepted and renamed with a note.)" },
     "zero": { "type": "boolean", "default": true, "description": "Line, area, scatter and candle: set false for a narrow range so the data fills the plot. Bars always include zero." },
-    "textured": { "type": "boolean", "description": "Bars: a hatch pattern per series, for monochrome terminals." },
-    "bins": { "type": "integer", "minimum": 1, "description": "Histogram: bin count. Default is the square-root rule, capped at 30." },
+    "ticks": { "type": "integer", "minimum": 1, "description": "Axis charts (bar, histogram, line, candle, ohlc, waterfall): how many labelled ticks to aim for. Default 4." },
+    "textured": { "type": "boolean", "description": "Bars and pie: a hatch pattern per series, for monochrome terminals." },
+    "bins": { "type": "integer", "minimum": 1, "description": "Histogram: bin count, clamped to 60. Default is the square-root rule, capped at 30." },
+    "data": { "type": "array", "items": { "type": "number" }, "description": "Histogram: the samples, as alias for values, the canonical key." },
     "start": { "type": "number", "description": "Waterfall: the running total before the first delta." },
     "total": { "type": "boolean", "default": true, "description": "Waterfall: draw the closing total bar." },
     "totalLabel": { "type": "string", "description": "Waterfall: name of the total bar." },
+    "totalColor": { "type": "string", "description": "Waterfall: colour of the closing total bar. Defaults to the first palette colour." },
     "up": { "type": "string", "description": "Candles and waterfall: colour of an upward move." },
     "down": { "type": "string", "description": "Candles and waterfall: colour of a downward move." },
-    "candles": { "type": "array", "items": { "type": "object", "required": ["open", "high", "low", "close"] } },
+    "candles": { "type": "array", "items": { "type": "object", "required": ["open", "high", "low", "close"] }, "description": "Candle data as {open, high, low, close} objects, instead of nested values." },
     "headers": { "type": "array", "items": { "type": "string" }, "description": "Heat map columns. (The old name 'columns' is accepted and renamed with a note.)" },
-    "rows": { "type": "array", "items": { "type": "object", "required": ["values"], "properties": { "label": { "type": "string" }, "values": { "type": "array", "items": { "type": ["number", "null"] } } } } },
+    "rows": {
+      "oneOf": [
+        { "type": "array", "items": { "type": "object", "required": ["values"], "properties": { "label": { "type": "string" }, "values": { "type": "array", "items": { "type": ["number", "null"] } } } } },
+        { "type": "array", "items": { "type": "array" } }
+      ],
+      "description": "Heat map: rows as {label, values}. Table: rows as arrays in column order."
+    },
     "cellWidth": { "type": "integer", "minimum": 2, "description": "Heat map: columns per cell. Defaults to the widest header plus one." },
     "low": { "type": "string", "description": "Heat map and table heat columns: colour for the lowest value." },
     "high": { "type": "string", "description": "Heat map and table heat columns: colour for the highest value." },
-    "valueLabels": { "type": "boolean", "description": "Heat map and bars: print each value." },
+    "from": { "type": "string", "description": "Heat map: alias for low, the canonical key for the ramp's low end." },
+    "to": { "type": "string", "description": "Heat map: alias for high, the canonical key for the ramp's high end." },
+    "min": { "type": "number", "description": "The bottom of the scale: heat map, and gantt day offsets. Default is the smallest value drawn." },
+    "scale": { "type": "boolean", "default": true, "description": "Heat map: print the colour scale row. Default true." },
+    "valueLabels": { "type": "boolean", "description": "Heat map, bars, line and waterfall: print each value." },
     "columns": {
       "type": "array",
       "description": "Table: column definitions. Each entry is a name or {label, key, type, width, color, align}.",
@@ -86,20 +103,50 @@
         ]
       }
     },
-    "rules": { "type": "boolean", "description": "Table: rule under the header." },
-    "items": { "type": "array", "items": { "type": "object", "description": "Treemap: {label, value} leaves, or {label, children} groups." } },
-    "nodes": { "type": "array", "items": { "type": "object", "required": ["id"], "properties": { "id": { "type": "string" }, "label": { "type": "string" }, "column": { "type": "integer" } } } },
-    "links": { "type": "array", "items": { "type": "object", "required": ["from", "to", "value"], "properties": { "from": { "type": "string" }, "to": { "type": "string" }, "value": { "type": "number", "exclusiveMinimum": 0 } } } },
-    "cards": { "type": "array", "items": { "type": "object", "description": "Kanban: flat cards; the column is decided by 'column', 'status' or 'list'." } },
+    "rules": { "type": "boolean", "default": true, "description": "Table: rule under the header. Default true." },
+    "items": { "type": "array", "items": { "type": "object" }, "description": "Treemap: leaves as {label, value}, groups as {label, children}." },
+    "children": { "type": "array", "items": { "type": "object" }, "description": "Treemap: alias for items, the canonical key." },
+    "nodes": { "type": "array", "items": { "type": "object", "required": ["id"], "properties": { "id": { "type": "string" }, "label": { "type": "string" }, "column": { "type": "integer" } } }, "description": "Sankey: named nodes, with an optional column to pin the layer." },
+    "links": { "type": "array", "items": { "type": "object", "required": ["from", "to", "value"], "properties": { "from": { "type": "string" }, "to": { "type": "string" }, "value": { "type": "number", "exclusiveMinimum": 0 } } }, "description": "Sankey: flows as {from, to, value} between node ids." },
+    "cards": { "type": "array", "items": { "type": "object", "description": "Kanban: flat cards; the column is decided by 'column', 'status' or 'list'." }, "description": "Kanban: a flat card list, when the columns are not declared inline." },
     "order": { "type": "array", "items": { "type": "string" }, "description": "Kanban: explicit column order." },
-    "columnWidth": { "type": "integer", "minimum": 4 },
-    "max": { "type": "number", "description": "Radar and gauge: the full-scale value, so two charts are comparable." },
+    "columnWidth": { "type": "integer", "minimum": 4, "description": "Kanban: width of one column in cells. Default is what the width budget allows." },
+    "titleLines": { "type": "integer", "minimum": 1, "description": "Kanban: lines a card title may wrap to. Default 3." },
+    "metaLines": { "type": "integer", "minimum": 0, "description": "Kanban: lines a card's meta may wrap to. Default 2; 0 hides it." },
+    "max": { "type": "number", "description": "The top of the scale: heat map, gantt, radar and gauge. Default is the largest value drawn, so set it on both charts to share a scale." },
     "filled": { "type": "boolean", "description": "Radar: fill the polygon even with several series." },
+    "axes": { "type": "array", "items": { "type": "string" }, "description": "Radar: alias for labels, the canonical key." },
     "spokes": { "type": "boolean", "default": true, "description": "Radar and pie: draw the axis lines." },
     "target": { "type": "number", "description": "Gauge and progress: a marker on the track." },
     "track": { "type": "boolean", "description": "Horizontal bars: show the unfilled track." },
     "sort": { "type": "boolean", "description": "Horizontal bars: order by value." },
+    "slotLabels": { "type": "boolean", "description": "Bars: give every bar its own label slot. Default true; false centres each label on its bar, which suits long labels." },
+    "horizontal": { "type": "boolean", "description": "Bars: draw horizontal bars. The same as type hbar." },
     "big": { "type": "boolean", "description": "Scatter: double the marker so single points stay visible." },
+    "donut": { "type": "boolean", "description": "Pie and donut: draw a hole in the middle. The same as type donut." },
+    "margin": { "type": "integer", "minimum": 0, "maximum": 3, "description": "Pie and donut: blank columns around the disc. Default 1." },
+    "glyphs": { "type": "array", "items": { "type": "string" }, "description": "Pie and donut: one fill glyph per slice, for monochrome terminals." },
+    "plainLegend": { "type": "boolean", "description": "Pie and donut: print the legend as text rows instead of marker cells." },
+    "value": { "type": "number", "description": "Gauge and progress: the value the bar shows. Default 0." },
+    "label": { "type": "string", "description": "Gauge and progress: the name printed beside the bar." },
+    "tasks": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "label": { "type": "string" },
+          "group": { "type": "string" },
+          "start": { "type": ["string", "number"] },
+          "end": { "type": ["string", "number"] },
+          "at": { "type": ["string", "number"] },
+          "date": { "type": ["string", "number"] },
+          "milestone": { "type": "boolean" }
+        }
+      },
+      "description": "Gantt rows as {label, group, start, end}, or {label, at} for a milestone. start and end take ISO dates or plain numbers; start also answers to from, end to to or finish, at to date."
+    },
+    "today": { "type": ["string", "number", "boolean"], "description": "Gantt: where the today marker sits, as an ISO date or a day offset. false hides it." },
+    "todayColor": { "type": "string", "description": "Gantt: colour of the today marker. Defaults to the fourth palette colour." },
     "note": { "type": "boolean", "default": true, "description": "Histogram: print the sample count and bin width under the chart." }
   },
   "examples": [

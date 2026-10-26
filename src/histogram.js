@@ -7,8 +7,11 @@
 //   { "type": "histogram", "values": [1.2, 3.4, 3.9, ...], "bins": 8 }
 
 import { formatNumber, titleRow, wrapText } from "./core.js";
-import { hiddenCategoryCount, renderBarRows, verticalLabelRow } from "./bar.js";
-import { plotRows as plotRowsFor } from "./layout.js";
+import { measureVerticalBars, renderBarRows } from "./bar.js";
+import { coerce, coerceList, policyFor } from "./values.js";
+
+/** The shared fate of a sample: a blank reads as 0, an unreadable one is dropped. */
+const HISTOGRAM_POLICY = policyFor("histogram");
 
 /** Automatic bin count: the square-root rule, capped so the bars stay readable. */
 export function binCount(samples, requested) {
@@ -24,7 +27,11 @@ export function binCount(samples, requested) {
  * @returns {{bins: {from: number, to: number, count: number}[], width: number, min: number, max: number, samples: number}}
  */
 export function bin(values, requested) {
-  const numbers = [...(values ?? [])].map(Number).filter((value) => Number.isFinite(value));
+  const numbers = [];
+  for (const raw of values ?? []) {
+    const { value } = coerce(raw, HISTOGRAM_POLICY);
+    if (value !== null) numbers.push(value);
+  }
   if (numbers.length === 0) return { bins: [], width: 0, min: 0, max: 0, samples: 0 };
 
   let min = Math.min(...numbers);
@@ -59,49 +66,15 @@ function widthOf(spec) {
   return Math.max(16, Math.floor(spec.width ?? 48));
 }
 
+/** The samples under the shared policy, `values` or `data`, in order. */
 function valuesOf(spec) {
-  if (Array.isArray(spec.values)) return spec.values;
-  return Array.isArray(spec.data) ? spec.data : [];
+  const raw = Array.isArray(spec.values) ? spec.values : Array.isArray(spec.data) ? spec.data : [];
+  return coerceList(raw, HISTOGRAM_POLICY, { compact: true }).values;
 }
 
 function footerLinesFor(spec, note, width) {
   if (spec.note === false) return [];
   return wrapText(note, Math.max(8, width - 2)).slice(0, 2);
-}
-
-/** The bar spec the bins are drawn with: no legend, no percent, thinned labels. */
-function barSpecFor(spec, width, footerLines) {
-  return {
-    type: "bar",
-    width,
-    plotHeight: plotRowsFor(spec, {
-      chrome: (spec.title ? 1 : 0) + 1 + footerLines.length,
-      fallback: 8,
-    }),
-    ticks: spec.ticks,
-    mosaic: spec.mosaic,
-    textured: spec.textured,
-    gap: spec.gap,
-    showPercent: false,
-    legend: false,
-    valueLabels: spec.valueLabels === true,
-    // Bin edges are longer than one bar slot, so they are thinned rather than cut.
-    slotLabels: false,
-  };
-}
-
-/**
- * A range is the label a reader wants ("0–82.5", not "0"), but it is about twice
- * as wide as the left edge it replaces. Show the ranges only when the whole row
- * fits; when two of them would collide, keep the short edges so the axis still
- * reads. The bar layout owns that row, so it answers with the real geometry
- * instead of an estimate.
- */
-function labelsFor(bins, barSpec, width, counts) {
-  const rangeLabels = binLabels(bins);
-  const series = [{ name: "count", values: counts }];
-  const placed = verticalLabelRow(barSpec, width, rangeLabels, series).split(/\s+/).filter(Boolean);
-  return placed.length === rangeLabels.length ? rangeLabels : bins.map((item) => formatNumber(item.from));
 }
 
 function pushFooter(rows, width, lines) {
@@ -125,25 +98,23 @@ export function renderHistogramRows(spec) {
   const note = `${samples} values, ${bins.length} bins of ${formatNumber(binWidth)}`;
   const footer = footerLinesFor(spec, note, width);
 
-  // A fresh spec: normalizeSeries prefers series over values, so nothing that
-  // arrived as series can leak into the bar chart. The bar keeps the plot area;
-  // the histogram owns the title row and the footer, so it subtracts both before
-  // it hands the plot height over.
+  // The bar layout owns the plot budget, the label row and the hidden-category
+  // note, so ask it once for all three instead of building a bar spec to
+  // measure. The histogram pays for the rows it prints around the plot (its
+  // footers); the ledger pays for its title, the bar's label row and its own
+  // notes before the plot, so the block adds up to `height`.
   const counts = bins.map((item) => item.count);
-  const barSpec = barSpecFor(spec, width, footer);
-  const labels = labelsFor(bins, barSpec, width, counts);
+  const ranges = binLabels(bins);
+  const layout = measureVerticalBars(spec, ranges, counts, { notes: footer.length });
 
-  // Too many bins for the width costs the bar one row for its hidden-category
-  // note. The bar layout owns that rule, so ask it for the count and take the row
-  // out of the plot here: the block then stays inside `height` and the note is
-  // the row the reader sees, not the generic height guard's replacement. With no
-  // `height` there is no ceiling to protect, so the plot is left alone.
-  const hidden = hiddenCategoryCount(barSpec, width, labels, [{ name: "count", values: counts }]);
-  // `plotHeight` is an explicit plot size, so it wins over a budget adjustment.
-  const budgeted = hidden > 0 && Number(spec.height) > 0 && spec.plotHeight == null;
-  const plotHeight = budgeted ? Math.max(3, barSpec.plotHeight - 1) : barSpec.plotHeight;
+  // A range is the label a reader wants ("0–82.5", not "0"), but it is about
+  // twice as wide as the left edge it replaces. Show the ranges only when the
+  // whole row fits; when two of them would collide, keep the short edges so the
+  // axis still reads.
+  const placed = layout.labelRow.split(/\s+/).filter(Boolean);
+  const labels = placed.length === ranges.length ? ranges : bins.map((item) => formatNumber(item.from));
 
-  rows.push(...renderBarRows({ ...barSpec, plotHeight, labels, values: counts }));
+  rows.push(...renderBarRows({ ...layout.spec, labels, values: counts }));
   pushFooter(rows, width, footer);
   return rows;
 }

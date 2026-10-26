@@ -32,6 +32,7 @@ import {
 } from "./core.js";
 import { paletteOf, themeOf } from "./theme.js";
 import { plotRows as plotRowsFor } from "./layout.js";
+import { coerce, policyFor } from "./values.js";
 
 /** Rows left between two nodes in a column. */
 const NODE_GAP = 1;
@@ -39,6 +40,10 @@ const NODE_GAP = 1;
 const LINK_SHADE = 0.7;
 /** Widest a gap may grow; past this the bands between columns read as empty. */
 const GAP_CAP = 14;
+/** A node bar stops growing here; past it the flow reads as a block, not a river. */
+const BAR_CAP = 8;
+/** The shared fate of a link value: a blank and an unreadable one drop the link. */
+const SANKEY_POLICY = policyFor("sankey");
 
 const name = (value) => (typeof value === "string" ? value : String(value ?? ""));
 
@@ -82,13 +87,13 @@ function readNode(raw, ensure) {
 /** One end of a link: `from`/`to`, or its `source`/`target` alias. */
 const endpointOf = (raw, key, alias) => name(raw?.[key] ?? raw?.[alias]);
 
-const linkValueOf = (raw) => Number(raw?.value);
+const linkValueOf = (raw) => coerce(raw?.value, SANKEY_POLICY).value;
 
 const linkLabelOf = (raw) => (raw?.label == null ? null : String(raw.label));
 
-/** A link needs both ends and a finite positive value; anything less is dropped. */
+/** A link needs both ends and a value the policy kept: finite and above zero. */
 const isReadableLink = (from, to, value) =>
-  Boolean(from) && Boolean(to) && Number.isFinite(value) && value > 0;
+  Boolean(from) && Boolean(to) && value !== null && value > 0;
 
 /** Append the link and hand it back, in the same property order as the spec. */
 function addLink(raw, links, ensure, { from, to, value }) {
@@ -321,7 +326,7 @@ function spreadColumns(columnCount, width) {
  * up to a cap so the bands between them stay readable.
  */
 function planColumns(columns, width) {
-  const { barWidth, gutter, gaps } = shrinkColumns(columns, width);
+  let { barWidth, gutter, gaps } = shrinkColumns(columns, width);
   const span = () => spanOf(columns.length, barWidth, gutter, gaps);
   if (span() > width) return spreadColumns(columns.length, width);
 
@@ -336,7 +341,21 @@ function planColumns(columns, width) {
     }
     if (!grew) break;
   }
-  const leftPad = Math.max(0, Math.floor((width - span()) / 2));
+  // The gaps are capped so bands stay readable, but the frame is not: widen the
+  // node bars next, then let the gaps pass the cap evenly. Before this, a wide
+  // chart spent half its width on nothing.
+  while (leftover >= columns.length && barWidth < BAR_CAP) {
+    barWidth += 1;
+    leftover -= columns.length;
+  }
+  for (let index = 0; index < gaps.length && leftover > 0; index++) {
+    const add = Math.min(leftover, Math.ceil(leftover / (gaps.length - index)));
+    gaps[index] += add;
+    leftover -= add;
+  }
+  // The columns start after the first label gutter. Centring them in a wide
+  // chart shrank the flow into the middle of the frame.
+  const leftPad = 0;
   const positions = columns.map(
     (_, column) => leftPad + gutter + column * barWidth + gaps.slice(0, column).reduce((sum, value) => sum + value, 0),
   );

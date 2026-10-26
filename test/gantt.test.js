@@ -6,6 +6,7 @@
 
 import assert from "node:assert/strict";
 import { cols, runsText } from "../src/core.js";
+import { renderChart } from "../src/chart.js";
 import { dayLabel, normalizeTasks, parseWhen, renderGanttRows, tickStep } from "../src/gantt.js";
 
 let checks = 0;
@@ -297,6 +298,33 @@ check("a typo in the mosaic name falls back instead of throwing", () => {
   assert.ok(rows.length > 0, "the chart still draws");
   const fallback = renderGanttRows({ ...dated, mosaic: "sextant" });
   assert.deepEqual(rows.map((row) => row.runs), fallback.map((row) => row.runs), "it draws the default mode");
+});
+
+check("a chart note costs one task row, not two", () => {
+  // Gantt keeps the ledger for its whole block, so the dispatcher hands it the
+  // height whole and the family leaves the rows for the notes below it. The old
+  // path took the note's row out of the height first and the window then spent
+  // it again, charging the same row twice.
+  const spec = {
+    type: "gantt",
+    width: 56,
+    height: 8,
+    tasks: Array.from({ length: 8 }, (_, index) => ({ label: `Task ${index + 1}`, start: index, end: index + 2 })),
+  };
+  const plain = textRows(renderGanttRows(spec));
+  const noted = renderChart({ ...spec, percent: true }).split("\n");
+  const taskRows = (rows) => rows.filter((row) => /Task \d/.test(row)).length;
+
+  assert.equal(plain.length, 8, `the plain block is the whole height (${plain.length})`);
+  assert.equal(noted.length, 8, `the noted block is the whole height (${noted.length})`);
+  assert.match(noted.join("\n"), /percent is now showPercent/, "the chart note is printed");
+  assert.doesNotMatch(noted.join("\n"), /rows? hidden/);
+  // Exactly one row: five tasks become four. Two rows lost would be the double
+  // charge.
+  assert.equal(taskRows(plain), 5);
+  assert.equal(taskRows(noted), 4);
+  // The family leaves the dispatcher's note rows free; it does not print them.
+  assert.equal(textRows(renderGanttRows(spec, { noteRows: 1 })).length, 7);
 });
 
 console.log(`\n${checks}/${checks} checks passed`);

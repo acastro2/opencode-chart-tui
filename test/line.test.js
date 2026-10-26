@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { cols, runsText } from "../src/core.js";
+import { renderChart } from "../src/chart.js";
 import { renderLineRows } from "../src/line.js";
 import { glyphFor, modeShape } from "../src/mosaic.js";
 
@@ -560,7 +561,11 @@ check("a name with no free row is dropped and counted, never overwritten", () =>
     labels: ["a", "b"],
     series: Array.from({ length: count }, (_, index) => ({ name: `s${index}`, values: [index + 1, index + 1] })),
   });
-  for (const [count, expected] of [[5, 1], [6, 3]]) {
+  // The dropped-name note is a row of the block, so it takes one plot row: five
+  // names fit four rows when there is no note to pay for and three when there
+  // is, and one more name loses its row. `hidden` is whatever the note says; the
+  // invariant is that every name is either drawn or counted.
+  for (const [count, expected] of [[5, 2], [6, 3]]) {
     const rows = renderLineRows(build(count));
     const texts = rows.map((row) => runsText(row.runs));
     for (const row of texts) assert.ok(cols(row) <= 40, `"${row}" overflows`);
@@ -725,6 +730,25 @@ check("a point that cannot be drawn is counted, not dropped in silence", () => {
     [...row].some((char) => /[\u2580-\u259f\u{1FB00}-\u{1FBFF}\u{1CC00}-\u{1CEBF}]/u.test(char)),
   );
   assert.ok(marked, "the valid point is still drawn");
+});
+
+check("an end-label note is paid for out of the height", () => {
+  // The unnamed series loses its end label, and the note says so. The plot used
+  // to be budgeted for the whole height and the note appended after it, so the
+  // block was one row over and the guard hid a row. The note is a row of the
+  // block now: the plot is one row shorter and the note is the last row.
+  const spec = {
+    type: "line",
+    width: 40,
+    height: 10,
+    labels: ["a", "b"],
+    legend: false,
+    series: [{ name: "", values: [1, 2] }, { name: "b", values: [2, 1] }],
+  };
+  const rows = renderChart(spec).split("\n");
+  assert.equal(rows.length, 10, `the block is ${rows.length} rows, not the height`);
+  assert.equal(rows.at(-1), "  1 end label dropped: no room");
+  assert.doesNotMatch(rows.join("\n"), /rows? hidden/);
 });
 
 console.log(`\n${checks}/${checks} checks passed`);

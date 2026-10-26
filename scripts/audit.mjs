@@ -15,7 +15,7 @@ import { fileURLToPath } from "node:url";
 import { renderChartRows } from "../src/chart.js";
 import { runsText } from "../src/core.js";
 import { displayWidth } from "../src/text.js";
-import { SAMPLES } from "./samples.mjs";
+import { SAMPLES, edgeSpecs } from "./corpus.mjs";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 const CASES = join(ROOT, "test/fixtures/audit/cases.json");
@@ -69,7 +69,14 @@ function main() {
     name: `height-10-${type}`,
     spec: { ...sample, type, width: 56, height: 10 },
   }));
-  const cases = [...corpus, ...heightCases];
+  // The cases the gallery cannot reach: grouped/stacked series, narrow widths
+  // and tight heights. They are audit cases too, not golden-only pictures, so
+  // the bounds and determinism gate sees the same shapes a reader sees.
+  const edgeCases = edgeSpecs().map(({ name, spec }) => ({
+    name: `edge-${name}`,
+    spec: { ...spec, width: spec.width ?? 56 },
+  }));
+  const cases = [...corpus, ...heightCases, ...edgeCases];
   let passed = 0;
   const failures = [];
 

@@ -9,7 +9,8 @@
 // out loud in a footer row. A chart that silently changes the data is worse than
 // one that admits it did.
 
-import { runsText, truncate, wrapText } from "./core.js";
+import { cols, runsText, truncate, wrapText } from "./core.js";
+import { coerceList, policyFor } from "./values.js";
 import { renderChartRows as renderPieRows } from "./pie.js";
 import { renderBarRows } from "./bar.js";
 import { renderHistogramRows } from "./histogram.js";
@@ -98,28 +99,6 @@ function stringEnd(source, start) {
   return index;
 }
 
-/**
- * Where a `//` comment that starts at `start` ends: past its newline, which the
- * comment owns, or at the end of the source.
- */
-function lineEnd(source, start) {
-  let index = start;
-  while (index < source.length && source[index] !== "\n") index += 1;
-  return Math.min(source.length, index + 1);
-}
-
-/** Whether the two characters at `index` close a block comment. */
-function closesComment(source, index) {
-  return source[index] === "*" && source[index + 1] === "/";
-}
-
-/** Where a block comment that starts at `start` ends: past its closing star. */
-function blockEnd(source, start) {
-  let index = start + 2;
-  while (index < source.length && !closesComment(source, index)) index += 1;
-  return Math.min(source.length, index + 2);
-}
-
 /** Whether a comma at `index` sits only white space away from a closing bracket. */
 function dropsComma(source, index) {
   let ahead = index + 1;
@@ -127,43 +106,45 @@ function dropsComma(source, index) {
   return source[ahead] === "}" || source[ahead] === "]";
 }
 
-/** One source character, taken as it is. */
-function plainToken(source, index) {
-  return { text: source[index], end: index + 1 };
-}
-
-/** A quoted string, copied whole so a // or /* inside it survives. */
-function stringToken(source, index) {
-  const end = stringEnd(source, index);
-  return { text: source.slice(index, end), end };
-}
-
-/** A slash: the start of a comment, or just a slash. */
-function slashToken(source, index) {
-  const next = source[index + 1];
-  if (next === "/") return { text: "\n", end: lineEnd(source, index) };
-  if (next === "*") return { text: " ", end: blockEnd(source, index) };
-  return plainToken(source, index);
-}
-
-/** A comma, dropped when it only trails a value before a closing bracket. */
-function commaToken(source, index) {
-  return dropsComma(source, index) ? { text: "", end: index + 1 } : plainToken(source, index);
-}
-
-// The three characters that need more than a copy; every other one is plain.
-const TOKENS = { '"': stringToken, "/": slashToken, ",": commaToken };
-
 /** JSON with the human bits stripped: comments, trailing commas. */
+function isLineComment(source, index) {
+  return source[index] === "/" && source[index + 1] === "/";
+}
+
+function isBlockComment(source, index) {
+  return source[index] === "/" && source[index + 1] === "*";
+}
+
+/** One token: the text to copy and where reading continues. */
+function readerStep(source, index) {
+  const char = source[index];
+  if (char === '"') {
+    // A string is copied whole, so a // or /* inside it survives.
+    const end = stringEnd(source, index);
+    return { text: source.slice(index, end), next: end };
+  }
+  if (isLineComment(source, index)) {
+    // The newline goes with the comment; the output keeps one either way.
+    const newline = source.indexOf("\n", index);
+    return { text: "\n", next: newline < 0 ? source.length : newline + 1 };
+  }
+  if (isBlockComment(source, index)) {
+    // One space stands in for the comment, closed or not.
+    const close = source.indexOf("*/", index + 2);
+    return { text: " ", next: close < 0 ? source.length : close + 2 };
+  }
+  if (char === "," && dropsComma(source, index)) return { text: "", next: index + 1 };
+  return { text: char, next: index + 1 };
+}
+
 export function readableJson(source) {
   let out = "";
   let index = 0;
 
   while (index < source.length) {
-    const take = TOKENS[source[index]] ?? plainToken;
-    const token = take(source, index);
-    out += token.text;
-    index = token.end;
+    const { text, next } = readerStep(source, index);
+    out += text;
+    index = next;
   }
 
   return out;
@@ -227,62 +208,37 @@ const TYPE_GUESSES = [
   [hasValueList, "bar"],
 ];
 
-/**
- * What `Number()` makes of one value. `ok` is a number the caller wrote, or a
- * string that reads as one. `coerced` is a missing value that `Number()` turns
- * into 0 all the same, so every family draws a 0. `bad` is a value no number
- * comes out of, which is the one a family may drop.
- */
-function valueKind(value) {
-  if (value === null || value === "") return "coerced";
-  return Number.isFinite(Number(value)) ? "ok" : "bad";
-}
-
-/** Whether a value is an object worth reading fields from. */
-function isObject(value) {
-  return Boolean(value) && typeof value === "object";
-}
-
 // Every field a point, candle or bar object can carry a number in.
 const NUMERIC_FIELDS = ["value", "x", "y", "o", "h", "l", "c", "open", "high", "low", "close"];
 
-/** A tally of the values a chart cannot read outright: drawn as 0, or not at all. */
-function emptyTally() {
-  return { coerced: 0, bad: 0 };
-}
-
-/** Add one value's fate. A number the chart can draw adds nothing. */
-function countValue(tally, value) {
-  const kind = valueKind(value);
-  if (kind !== "ok") tally[kind] += 1;
-}
-
-/** Add the numeric fields one object carries. A field left out is not a field. */
-function countFields(tally, entry) {
-  for (const key of NUMERIC_FIELDS) {
-    if (entry[key] !== undefined) countValue(tally, entry[key]);
-  }
-}
-
-/** A [label, value] pair carries its label first, so only the value counts. */
-function pairValue(entry) {
-  return entry.length === 2 && typeof entry[0] === "string" ? [entry[1]] : entry;
-}
-
-/** Add one entry of a numeric list: a pair is walked, an object read, a value judged. */
-function countEntry(tally, entry) {
+/**
+ * Append the values one entry of a numeric list carries: a pair's value, the
+ * numeric fields of an object, or the entry itself. The shapes are the ones the
+ * families accept, so the tally judges exactly the values they draw.
+ */
+function addEntryValues(values, entry) {
   if (Array.isArray(entry)) {
-    for (const value of pairValue(entry)) countEntry(tally, value);
+    // A [label, value] pair carries its label first, so only the value counts.
+    const pair = entry.length === 2 && typeof entry[0] === "string";
+    for (const value of pair ? [entry[1]] : entry) addEntryValues(values, value);
     return;
   }
-  if (isObject(entry)) countFields(tally, entry);
-  else countValue(tally, entry);
+  if (entry && typeof entry === "object") {
+    // A field left out is not a field, so it is not a value the chart lost.
+    for (const key of NUMERIC_FIELDS) {
+      if (entry[key] !== undefined) values.push(entry[key]);
+    }
+    return;
+  }
+  values.push(entry);
 }
 
-/** Add every entry of a numeric list. A list that is not a list holds nothing. */
-function countEntries(tally, list) {
-  if (!Array.isArray(list)) return;
-  for (const entry of list) countEntry(tally, entry);
+/** The values a list holds. A list that is not a list holds nothing. */
+function listValues(list) {
+  const values = [];
+  if (!Array.isArray(list)) return values;
+  for (const entry of list) addEntryValues(values, entry);
+  return values;
 }
 
 /** The fields this library has renamed, with when each rename applies. */
@@ -326,7 +282,10 @@ function headerNote(spec, type) {
 
 /** The lists that carry plain numbers, wherever the family keeps them. */
 function valueLists(spec) {
-  const lists = [spec.values, spec.data, spec.points, spec.slices, spec.candles, spec.items, spec.children];
+  // `points` is absent on purpose: `line.js` owns that list and reports skipped
+  // pairs itself with `POINTS_POLICY`, so counting it here reported the same
+  // value twice under two different fates.
+  const lists = [spec.values, spec.data, spec.slices, spec.candles, spec.items, spec.children];
   if (Array.isArray(spec.series)) lists.push(...spec.series.map((item) => item?.values));
   if (Array.isArray(spec.links)) lists.push(spec.links);
   return lists;
@@ -348,41 +307,43 @@ function rowLists(spec, type) {
   return rowsOf(spec).map((row) => row?.values);
 }
 
-// The families that name what they could not draw in their own units: a candle
-// skipped, a value omitted, a row with no values. Counting the same rows again
-// at chart level reported one loss as two, in a wording that could be false.
-const SELF_REPORTING = new Set(["heatmap", "candle", "candlestick", "ohlc", "treemap"]);
-
-// The families that read a value they cannot draw as zero and paint the zero.
-// Every other family drops the value, or the entry that held it. A gauge's own
-// `value` is a scalar and is never counted here, so gauge and progress are out.
-const ZERO_FILLED = new Set(["bar", "column", "hbar", "line", "area", "sparkline", "scatter", "radar"]);
-
 /** `1 non-numeric value` / `2 non-numeric values`, the phrase every note uses. */
 function countPhrase(count) {
   return `${count} non-numeric ${count === 1 ? "value" : "values"}`;
 }
 
 /**
- * The note for values the chart could not draw. The two groups are counted
- * apart, because the same loss does not have the same fate. A missing value is
- * always drawn as 0 — `Number()` makes it 0 and every family reads it that way —
- * so it never takes the dropping verb. A value no number comes out of takes the
- * family's verb, and the two groups share one phrase when the verb agrees.
+ * The note for values the chart could not draw, in the words the family's own
+ * policy used: a value kept in place reads as a zero, a value the family
+ * removed reads as dropped, and both groups are counted apart. A family that
+ * names its own losses keeps the dispatcher quiet, or one loss is reported
+ * twice. A hole is a slot kept empty, so it counts with the zeros: nothing was
+ * removed, and today no family reports holes at chart level.
  */
 function valueNote(type, tally) {
-  const total = tally.coerced + tally.bad;
-  if (SELF_REPORTING.has(type) || total === 0) return "";
-  if (ZERO_FILLED.has(type) || tally.bad === 0) return `${countPhrase(total)} treated as 0`;
-  if (tally.coerced === 0) return `${countPhrase(tally.bad)} dropped`;
-  return `${countPhrase(tally.coerced)} treated as 0 and ${countPhrase(tally.bad)} dropped`;
+  if (policyFor(type).selfReports) return "";
+  const kept = tally.zeroed + tally.holes;
+  const total = kept + tally.dropped;
+  if (total === 0) return "";
+  if (tally.dropped === 0) return `${countPhrase(total)} treated as 0`;
+  if (kept === 0) return `${countPhrase(tally.dropped)} dropped`;
+  return `${countPhrase(kept)} treated as 0 and ${countPhrase(tally.dropped)} dropped`;
 }
 
-/** How many values the spec's lists hold that the chart cannot read outright. */
+/** How many values the spec's lists hold that the chart cannot draw outright. */
 function valueTally(spec, type) {
-  const tally = emptyTally();
-  for (const list of valueLists(spec)) countEntries(tally, list);
-  for (const list of rowLists(spec, type)) countEntries(tally, list);
+  const policy = policyFor(type);
+  const tally = { zeroed: 0, holes: 0, dropped: 0 };
+  const lists = valueLists(spec);
+  // A gauge and a progress bar draw one scalar, not a list. It is data all the
+  // same, so an unreadable value must be counted rather than silently drawn as 0.
+  if (type === "gauge" || type === "progress") lists.push([spec.value]);
+  for (const list of [...lists, ...rowLists(spec, type)]) {
+    const counted = coerceList(listValues(list), policy);
+    tally.zeroed += counted.zeroed;
+    tally.holes += counted.holes;
+    tally.dropped += counted.dropped;
+  }
   return tally;
 }
 
@@ -417,16 +378,30 @@ function noteRows(text, width) {
   }));
 }
 
+/**
+ * The guard's sentence, in the longest form that fits the row. `noteRows` wraps
+ * and keeps the first line, so a sentence that does not fit used to end at
+ * "hidden at" — the count survived, the meaning did not.
+ */
+function hiddenNoteText(hidden, limit, width) {
+  const count = `${hidden} ${hidden === 1 ? "row" : "rows"}`;
+  const room = Math.max(1, width - 4);
+  const forms = [
+    `${count} hidden at height ${limit}`,
+    `${count} hidden at ${limit}`,
+    `${count} hidden`,
+    `${hidden} hidden`,
+  ];
+  return forms.find((form) => cols(form) <= room) ?? `${hidden} hidden`;
+}
+
 /** Last resort for a family that cannot shrink its own rows to `height`. */
 function fitToHeight(rows, budget, width) {
   const limit = Math.max(0, Math.floor(budget));
   if (rows.length <= limit) return rows;
   if (limit <= 1) return rows.slice(0, limit);
   const hidden = rows.length - limit;
-  const note = noteRows(
-    `${hidden} row${hidden === 1 ? "" : "s"} hidden at height ${limit}`,
-    width,
-  )[0];
+  const note = noteRows(hiddenNoteText(hidden, limit, width), width)[0];
   return [...rows.slice(0, limit - 1), note];
 }
 
@@ -491,15 +466,28 @@ function applyHeight(rows, notes, height, width) {
 }
 
 /**
- * The height to hand the family: the block, less the rows its notes will take.
- * The note footer is part of the block `height` measures, so a note has to cost
- * a row of budget, not the family's last data row. A chart with no notes, or no
- * height, is handed the spec as it came.
+ * Families that keep the ledger for their whole block: they spend `height` on
+ * the title, the axis, the tasks, their own notes and the legend themselves, and
+ * take the rows the dispatcher appends under the chart as `noteRows` (see
+ * `ganttWindow`). The dispatcher hands them the height whole and does not take
+ * the note rows away a second time; the family leaves exactly that many rows
+ * free, so the block still ends at `height`.
  */
-function familyHeight(height, noteCount) {
+const OWNS_HEIGHT = new Set(["gantt"]);
+
+/**
+ * The height to hand the family. For most families that is the block less the
+ * rows the dispatcher's notes will take: the note footer is part of the block
+ * `height` measures, so a note has to cost a row of budget, not the family's last
+ * data row. A family that keeps its own ledger (`OWNS_HEIGHT`) gets the block
+ * whole and takes the note rows itself. A chart with no height is handed the spec
+ * as it came.
+ */
+function familyHeight(height, noteCount, type) {
   const total = Number(height);
   if (!Number.isFinite(total) || total <= 0) return height;
   const limit = Math.max(1, Math.floor(total));
+  if (OWNS_HEIGHT.has(type)) return limit;
   return Math.max(1, limit - Math.min(noteCount, Math.max(0, limit - 1)));
 }
 
@@ -512,8 +500,11 @@ export function renderChartRows(spec = {}) {
   // The notes are read before the family draws, so they are paid for out of the
   // height budget instead of out of the rows the family already drew.
   const notes = notesFor(spec, chart.type, chart.guessed, width);
-  const height = familyHeight(spec.height, notes.length);
-  const familyRows = chart.render(height === spec.height ? chart.spec : { ...chart.spec, height });
+  const height = familyHeight(spec.height, notes.length, chart.type);
+  const familySpec = height === spec.height ? chart.spec : { ...chart.spec, height };
+  // `noteRows` tells a family that owns its block how many rows to leave for the
+  // notes below; other families ignore it.
+  const familyRows = chart.render(familySpec, { noteRows: notes.length });
   // `height` is the total block, not a family's private plot height. Families
   // budget their own chrome first; this is the guard for the ones that cannot.
   return applyHeight(familyRows, notes, spec.height, width);

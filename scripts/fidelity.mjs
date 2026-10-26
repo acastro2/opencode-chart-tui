@@ -9,7 +9,7 @@
 // `npm run audit` (bounds, accounting, determinism) and `npm run golden` (the
 // exact picture). The split is deliberate: a weak reference is worse than none.
 
-import { SAMPLES } from "./samples.mjs";
+import { SAMPLES, VARIANTS, edgeSpecs } from "./corpus.mjs";
 import { renderChartRows } from "../src/chart.js";
 import { displayWidth } from "../src/text.js";
 
@@ -162,6 +162,63 @@ function sliceArea(rows, slice, kinds = new Set(["fill"])) {
   return area;
 }
 
+/** Area for one slice on one row: where a band meets the zero line. */
+function rowSliceArea(row, slice) {
+  let area = 0;
+  for (const run of row.runs) {
+    if (run.kind !== "fill" && run.kind !== "edge") continue;
+    if (run.slice === slice) area += displayWidth(run.text);
+  }
+  return area;
+}
+
+/**
+ * One bar per contiguous run of columns painted for `slice`: its top row,
+ * bottom row and height in cells. A grouped chart gives each series its own
+ * columns, so these extents show both the shared floor and the value order
+ * without reading the bar planner.
+ */
+function barExtents(rows, slice) {
+  const width = Math.max(...rows.map((row) => row.width));
+  const top = Array(width).fill(Number.POSITIVE_INFINITY);
+  const bottom = Array(width).fill(-1);
+
+  rows.forEach((row, y) => {
+    let x = 0;
+    for (const run of row.runs) {
+      const cells = displayWidth(run.text);
+      if ((run.kind === "fill" || run.kind === "edge") && run.slice === slice) {
+        for (let offset = 0; offset < cells && x + offset < width; offset += 1) {
+          top[x + offset] = Math.min(top[x + offset], y);
+          bottom[x + offset] = Math.max(bottom[x + offset], y);
+        }
+      }
+      x += cells;
+    }
+  });
+
+  const bars = [];
+  let bar = null;
+  for (let column = 0; column < width; column += 1) {
+    if (bottom[column] < 0) {
+      bar = null;
+      continue;
+    }
+    if (!bar) {
+      bar = { top: top[column], bottom: bottom[column] };
+      bars.push(bar);
+      continue;
+    }
+    bar.top = Math.min(bar.top, top[column]);
+    bar.bottom = Math.max(bar.bottom, bottom[column]);
+  }
+  return bars.map((item) => ({
+    top: item.top,
+    bottom: item.bottom,
+    height: item.bottom - item.top + 1,
+  }));
+}
+
 check("bar height follows value", () => {
   const width = 40;
   const rows = renderChartRows({ type: "bar", width, height: 10, labels: ["A", "B"], values: [50, 100], legend: false });
@@ -176,10 +233,80 @@ check("bar height follows value", () => {
       x += cells;
     }
   }
-  const half = Math.max(...heights.slice(0, Math.floor(width / 2)));
-  const full = Math.max(...heights.slice(Math.floor(width / 2)));
-  assert(full > half, `right bar ${full} is not taller than left ${half}`);
-  return `${half} -> ${full} cells`;
+  // Find the bars themselves rather than splitting the row in half: the layout
+  // starts at the axis, so a midpoint split is not between two bars.
+  const groups = [];
+  for (const [x, height] of heights.entries()) {
+    if (height === 0) continue;
+    const last = groups[groups.length - 1];
+    if (last && x - last.end === 1) {
+      last.end = x;
+      last.top = Math.max(last.top, height);
+    } else {
+      groups.push({ start: x, end: x, top: height });
+    }
+  }
+  assert(groups.length >= 2, `two bars are not visible (${groups.length})`);
+  const [left, right] = groups;
+  assert(right.top > left.top, `right bar ${right.top} is not taller than left ${left.top}`);
+  return `${left.top} -> ${right.top} cells`;
+});
+
+// The grouped-bar floor bug: every series bar must grow from the zero row, and
+// a bigger value must draw a taller bar. A single-series sample cannot see
+// either; this one asserts both properties on the real two-series layout.
+check("grouped bars share the zero row and follow their values", () => {
+  const rows = renderChartRows({ ...VARIANTS["bar-grouped"], width: 56, legend: false });
+  const closed = barExtents(rows, 0);
+  const open = barExtents(rows, 1);
+  assert(closed.length === 3, `drew ${closed.length} closed bars, expected 3`);
+  assert(open.length === 3, `drew ${open.length} open bars, expected 3`);
+
+  const floor = closed[0].bottom;
+  for (const bar of [...closed, ...open]) {
+    assert(bar.bottom === floor, `a bar starts at row ${bar.bottom}, not ${floor}`);
+  }
+  // The shared floor is the zero row: the bar gutter marks it with the axis cross.
+  assert(rows[floor].runs[0].text.includes("┼"), `row ${floor} is not the zero row`);
+
+  const heights = (bars) => bars.map((bar) => bar.height).join("/");
+  assert(
+    closed[0].height > closed[1].height && closed[1].height > closed[2].height,
+    `closed heights ${heights(closed)} do not follow 120 > 90 > 60`,
+  );
+  assert(
+    open[0].height < open[1].height && open[1].height < open[2].height,
+    `open heights ${heights(open)} do not follow 30 < 60 < 90`,
+  );
+  return `${heights(closed)} and ${heights(open)} cells`;
+});
+
+// The stacked-area bugs: band 0 must meet the zero row, and a one-series stack
+// must still paint a band. Drawing only the label passed the old text checks.
+check("stacked area band 0 touches the zero row", () => {
+  const rows = renderChartRows({ ...VARIANTS["area-stacked"], width: 56 });
+  const bottom = rows.findLastIndex((row) =>
+    row.runs.some((run) => (run.kind === "fill" || run.kind === "edge") && run.slice >= 0),
+  );
+  assert(bottom >= 0, "no band painted");
+  assert(rowSliceArea(rows[bottom], 0) > 0, `bottom row ${bottom} has no band 0 fill`);
+  const below = rows[bottom + 1];
+  assert(
+    below && below.runs.some((run) => run.kind === "axis" && run.text.includes("A") && run.text.includes("D")),
+    `row ${bottom} is not the last plot row`,
+  );
+  return `band 0 at row ${bottom}`;
+});
+
+check("single-series stacked area fills a band, not just its label", () => {
+  const width = 56;
+  const rows = renderChartRows({ ...VARIANTS["area-stacked-single"], width });
+  const perRow = rows.map((row) => rowSliceArea(row, 0));
+  const painted = perRow.filter((cells) => cells > 0);
+  assert(painted.length >= 3, `only ${painted.length} row(s) painted`);
+  const widest = Math.max(...perRow);
+  assert(widest >= width / 2, `widest painted row is ${widest} cells, too small to be a band`);
+  return `${painted.length} rows, ${widest} cells wide`;
 });
 
 check("column is the bar alias", () => {
@@ -313,6 +440,26 @@ check("donut is a pie with a hole", () => {
   assert(donutCells < pieCells * 0.95, `donut ${donutCells} vs pie ${pieCells}`);
   return `${donutCells} < ${pieCells}`;
 });
+
+// The gallery samples prove the common path. The edge specs prove the paths
+// the gallery never draws: grouped/stacked series, narrow widths, tight heights.
+for (const { name, spec } of edgeSpecs()) {
+  check(`edge ${name} stays inside width and height`, () => {
+    const width = spec.width ?? 56;
+    const first = renderChartRows({ ...spec, width });
+    const second = renderChartRows({ ...spec, width });
+    assert(JSON.stringify(first) === JSON.stringify(second), `${name} is not deterministic`);
+    const height = Number(spec.height);
+    if (Number.isFinite(height) && height > 0) {
+      assert(first.length <= Math.floor(height), `${name} rendered ${first.length} rows at height ${height}`);
+    }
+    for (const row of first) {
+      const text = row.runs.map((run) => run.text).join("");
+      assert(displayWidth(text) <= row.width, `${name} row is ${displayWidth(text)} cells, declares ${row.width}`);
+    }
+    return `${first.length} rows`;
+  });
+}
 
 check("all families stay inside width, height and determinism", () => {
   for (const [type, sample] of Object.entries(SAMPLES)) {

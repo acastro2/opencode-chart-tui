@@ -176,6 +176,17 @@ function heightLimit(spec) {
   return Number.isFinite(Number(spec.height)) ? Math.max(3, Math.floor(Number(spec.height))) : Infinity;
 }
 
+/**
+ * The rows the dispatcher appends under the chart. `height` is the whole block,
+ * those note rows included, so they come out of the budget here — once. The
+ * family leaves them free and the dispatcher prints them; subtracting them in
+ * the dispatcher as well charged the same rows twice.
+ */
+function reservedNoteRows(options) {
+  const count = Number(options?.noteRows);
+  return Number.isFinite(count) && count > 0 ? Math.floor(count) : 0;
+}
+
 /** The rule is decoration, so it is the first fixed row to go. */
 function showRuleFor(limit, spec) {
   return limit === Infinity || limit - (spec.title ? 1 : 0) >= 3;
@@ -218,11 +229,14 @@ function noteBudget(limit, notes, room) {
 }
 
 /** The rows the height budget leaves for tasks, notes and the legend. */
-function ganttWindow(spec, tasks, names, headerAt, notes) {
+function ganttWindow(spec, tasks, names, headerAt, notes, reserved = 0) {
   // `height` is the row budget for the whole chart, not for the plot: the title,
   // the scale, the rule, the task rows, the admission that some are missing, the
-  // note, and the legend all spend from it.
-  const limit = heightLimit(spec);
+  // note, and the legend all spend from it. The rows the dispatcher appends
+  // under the chart are part of the same block and are taken out first, so its
+  // notes are paid for here and nowhere else.
+  const whole = heightLimit(spec);
+  const limit = whole === Infinity ? whole : Math.max(3, whole - Math.max(0, reserved));
   const showRule = showRuleFor(limit, spec);
   const fixed = (spec.title ? 1 : 0) + 1 + (showRule ? 1 : 0);
   const rowCost = taskRowCosts(tasks, headerAt);
@@ -447,7 +461,7 @@ function ganttFooter(rows, width, window, names, palette) {
 }
 
 /** The rows a Gantt draws: title, scale, one row per task, then the legend. */
-export function renderGanttRows(spec) {
+export function renderGanttRows(spec, options = {}) {
   const width = Math.max(24, Math.floor(spec.width ?? 80));
   const rows = [];
   if (spec.title) rows.push(titleRow(spec.title, width));
@@ -461,7 +475,7 @@ export function renderGanttRows(spec) {
   const headerAt = tasks.map((task, index) => task.group !== null && task.group !== (tasks[index - 1]?.group ?? null));
   const notes = [];
   if (dropped > 0) notes.push(`  ${dropped} ${dropped === 1 ? "task" : "tasks"} omitted (no usable time)`);
-  const window = ganttWindow(spec, tasks, names, headerAt, notes);
+  const window = ganttWindow(spec, tasks, names, headerAt, notes, reservedNoteRows(options));
   const geometry = ganttGeometry(spec, width, tasks, window.shown, min, max);
   const grid = buildGanttGrid(spec, width, tasks, names, window, geometry, headerAt, dated, base, min, max, todayAt);
 

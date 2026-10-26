@@ -27,19 +27,15 @@
 import { glyphFor } from "./mosaic.js";
 import {
   BLANK,
-  DEFAULT_PALETTE,
   SOLID,
   SPOKE,
   blankGrid,
   cellsToRuns,
   cols,
-  contrastOn,
   cumulativeFractions,
-  formatPercent,
   legendLines,
   legendRowRuns,
   makeSampler,
-  normalizeEntries,
   secondIndex,
   seriesGlyphs,
   titleRow,
@@ -47,19 +43,13 @@ import {
   winnerOf,
 } from "./core.js";
 import { graphemeWidth, graphemes } from "./text.js";
-import { plotRows as plotRowsFor } from "./layout.js";
-
-// Re-exported so the plugin and the tests can keep importing from this file.
-export {
-  DEFAULT_PALETTE,
-  contrastOn,
-  formatPercent,
-  seriesGlyphs,
-  sliceGlyphs,
-  normalizeEntries as normalizeSlices,
-} from "./core.js";
+import { layoutFor } from "./layout.js";
+import { coerce, policyFor } from "./values.js";
 
 const TAU = Math.PI * 2;
+
+/** The shared fate of a slice value: a blank and an unreadable one drop the slice. */
+const PIE_POLICY = policyFor("pie");
 
 // --- Geometry -------------------------------------------------------------
 
@@ -431,12 +421,12 @@ export function renderPie(slices, options = {}) {
 }
 
 /**
- * The same grid as runs of characters. The caller turns each run into a styled
+ * The rows of one disc layout: the cells as runs of characters, then the note
+ * for any label that had to be dropped. The caller turns each run into a styled
  * span: one span per slice, so a wedge is one colour. An "edge" run names the
  * second wedge in `other`, to be painted as the background of the run.
  */
-export function renderPieRows(slices, options = {}) {
-  const { width, cells, labelsDropped } = layoutPie(slices, options);
+function pieRowsFromLayout({ width, cells, labelsDropped = 0 }) {
   const rows = cells.map((row) => ({ width, runs: cellsToRuns(row) }));
   if (labelsDropped > 0) {
     const label = labelsDropped === 1 ? "label" : "labels";
@@ -446,6 +436,10 @@ export function renderPieRows(slices, options = {}) {
     });
   }
   return rows;
+}
+
+export function renderPieRows(slices, options = {}) {
+  return pieRowsFromLayout(layoutPie(slices, options));
 }
 
 /** Legend rows, one slice per line, aligned on the label and the value. */
@@ -458,19 +452,49 @@ function resolveGlyphs(spec, slices) {
   return spec.textured ? seriesGlyphs(slices.length) : slices.map(() => SOLID);
 }
 
-function discHeight(spec, width, margin) {
+/** The default disc height for a width: a wide frame gets a wide chart. */
+function discFallback(spec, width, margin) {
   const aspect = Number(spec.cellAspect) > 0 ? Number(spec.cellAspect) : 2;
   const radiusX = Math.max(2, (width - 2 * margin) / 2);
   // The same cap layoutPie applies: a wide frame gets a wide *chart*, not a
   // 70-row disc.
-  const fallback = Math.max(3, Math.min(28, Math.round((2 * radiusX) / aspect) + 2));
-  const legendRows = spec.legend === false || spec.plainLegend === true ? 0 : readSlices(spec).length;
-  return plotRowsFor(spec, {
-    chrome: (spec.title ? 1 : 0) + legendRows,
-    fallback,
+  return Math.max(3, Math.min(28, Math.round((2 * radiusX) / aspect) + 2));
+}
+
+/** Rows the legend takes under a styled chart: one per slice. */
+function rowLegendRows(spec, slices) {
+  return spec.legend === false || spec.plainLegend === true ? 0 : slices.length;
+}
+
+/**
+ * The row ledger for the whole block. `notes` is the number of note rows the
+ * chart will print: a dropped-label note is a row of the block, so it is paid
+ * for before the disc, never appended past a height the disc already spent.
+ */
+function pieLedger(spec, width, margin, slices, notes) {
+  return layoutFor(spec, {
+    title: spec.title ? 1 : 0,
+    legend: rowLegendRows(spec, slices),
+    notes,
+    fallback: discFallback(spec, width, margin),
     min: 3,
     max: 28,
   });
+}
+
+/** The disc options for one ledger; the height in it is the plot's own rows. */
+function pieOptions(spec, width, margin, slices, height) {
+  return {
+    width,
+    height,
+    margin,
+    glyphs: resolveGlyphs(spec, slices),
+    donut: isDonut(spec),
+    spokes: spec.spokes,
+    textured: spec.textured,
+    mosaic: spec.mosaic,
+    cellAspect: spec.cellAspect,
+  };
 }
 
 export function isDonut(spec) {
@@ -478,10 +502,37 @@ export function isDonut(spec) {
 }
 
 /**
- * Title, disc, legend as plain text, padded to one width so the block keeps its
- * shape in a chat transcript.
+ * Accept `[[label, value]]` or `[{ label, value }]`. The shared policy drops a
+ * blank or unreadable value; a slice also has to be positive to take a wedge,
+ * because a zero-width slice has no angle to draw.
  */
-/** Slices come as `slices`, or as parallel `labels` and `values` like every other family. */
+function entryPair(item) {
+  return Array.isArray(item)
+    ? { label: item[0], raw: item[1] }
+    : { label: item?.label, raw: item?.value };
+}
+
+/** One slice, or null when its value cannot be drawn. */
+function readEntry(item) {
+  const { label, raw } = entryPair(item);
+  const { value } = coerce(raw, PIE_POLICY);
+  if (value === null || !(value > 0)) return null;
+  return { label: String(label ?? ""), value };
+}
+
+function normalizeEntries(input) {
+  const entries = [];
+  for (const item of input ?? []) {
+    const entry = readEntry(item);
+    if (entry) entries.push(entry);
+  }
+  return entries;
+}
+
+/**
+ * Slices come as `slices`, or as parallel `labels` and `values` like every other
+ * family.
+ */
 function readSlices(spec) {
   if (Array.isArray(spec.slices)) return normalizeEntries(spec.slices);
   const values = Array.isArray(spec.values) ? spec.values : [];
@@ -510,6 +561,10 @@ function hasRowLegend(spec, slices) {
   return spec.legend !== false && slices.length > 0 && spec.plainLegend !== true;
 }
 
+/**
+ * Title, disc, legend as plain text, padded to one width so the block keeps its
+ * shape in a chat transcript.
+ */
 export function renderPieChart(spec) {
   const width = chartWidth(spec);
   const margin = chartMargin(spec);
@@ -519,18 +574,13 @@ export function renderPieChart(spec) {
   const lines = [];
   if (spec.title) lines.push(titleLine(spec.title, width));
 
+  // The plain renderer prints no note, so it pays for none: the disc height is
+  // the ledger's plot rows for a chart with no note rows.
   lines.push(
-    ...renderPie(slices, {
-      width,
-      height: discHeight(spec, width, margin),
-      margin,
-      glyphs,
-      donut: isDonut(spec),
-      spokes: spec.spokes,
-      textured: spec.textured,
-      mosaic: spec.mosaic,
-      cellAspect: spec.cellAspect,
-    }),
+    ...renderPie(
+      slices,
+      pieOptions(spec, width, margin, slices, pieLedger(spec, width, margin, slices, 0).plotRows),
+    ),
   );
 
   if (hasLegend(spec, slices)) {
@@ -550,24 +600,29 @@ export function renderChartRows(spec) {
   const width = chartWidth(spec);
   const margin = chartMargin(spec);
   const slices = readSlices(spec);
-  const glyphs = resolveGlyphs(spec, slices);
+
+  /** The disc laid out for a ledger that has already paid for `notes` rows. */
+  const lay = (ledger) => layoutPie(slices, pieOptions(spec, width, margin, slices, ledger.plotRows));
+
+  // The dropped-label note is only known after the labels are stamped, so the
+  // disc is drawn once to find it. When it lost a label, the note is paid for
+  // out of the height and the disc is drawn again one row shorter; a smaller
+  // disc loses at least as many labels, so the second drawing still has a note
+  // to print. If the ledger says the block cannot fit even at the disc's
+  // minimum, the note is kept and the dispatcher's guard says which rows were
+  // hidden, so the loss is never silent. The second pass is skipped there,
+  // because a reserved note row cannot change a plot already at its minimum.
+  const ledger = pieLedger(spec, width, margin, slices, 0);
+  let layout = lay(ledger);
+  if (layout.labelsDropped > 0 && !ledger.truncated) {
+    const reserved = pieLedger(spec, width, margin, slices, 1);
+    const redrawn = lay(reserved);
+    if (redrawn.labelsDropped > 0) layout = redrawn;
+  }
 
   const rows = [];
   if (spec.title) rows.push(titleRow(String(spec.title), width));
-
-  rows.push(
-    ...renderPieRows(slices, {
-      width,
-      height: discHeight(spec, width, margin),
-      margin,
-      glyphs,
-      donut: isDonut(spec),
-      spokes: spec.spokes,
-      textured: spec.textured,
-      mosaic: spec.mosaic,
-      cellAspect: spec.cellAspect,
-    }),
-  );
+  rows.push(...pieRowsFromLayout(layout));
 
   if (hasRowLegend(spec, slices)) {
     rows.push(...legendRowRuns(slices, { width, marker: "●" }));

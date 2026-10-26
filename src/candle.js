@@ -27,10 +27,14 @@ import {
 } from "./core.js";
 import { themeOf } from "./theme.js";
 import { axisRow, baseline, buildAxis, pointLabelRow, subRowOf } from "./axis.js";
-import { plotRows as plotRowsFor } from "./layout.js";
+import { layoutFor } from "./layout.js";
+import { coerce, policyFor } from "./values.js";
 
 export const CANDLE_UP = "#57c98a";
 export const CANDLE_DOWN = "#e5695f";
+
+/** The shared fate of a price: a blank and an unreadable one drop the row. */
+const CANDLE_POLICY = policyFor("candle");
 
 /** The rows the caller gave us. `candles` wins over `values`; neither is a list. */
 function rawCandles(spec) {
@@ -45,10 +49,12 @@ function readFields(item) {
   return item ?? {};
 }
 
-/** A price, or NaN. `Number(null)` is 0, and a missing price is not zero. */
+/**
+ * A price, or null when the row cannot be drawn. `Number(null)` is 0, and a
+ * missing price is not zero: the shared policy drops the row instead.
+ */
 function priceOf(value) {
-  if (value === null || value === "") return Number.NaN;
-  return Number(value);
+  return coerce(value, CANDLE_POLICY).value;
 }
 
 /** One candle from its fields, or null when any price is not a number. */
@@ -57,6 +63,7 @@ function buildCandle(row, fallbackLabel) {
   const high = priceOf(row.high);
   const low = priceOf(row.low);
   const close = priceOf(row.close);
+  // A dropped price is null, which is not finite: the whole row goes.
   if (![open, high, low, close].every(Number.isFinite)) return null;
   return {
     // The high is the top and the low is the bottom, whatever the caller sent.
@@ -89,11 +96,6 @@ function candleColours(spec) {
   };
 }
 
-/** Rows the chrome takes: the title, the axis label row, the legend, and notes. */
-function chromeRows(spec, notes = 0) {
-  return (spec.title ? 1 : 0) + 1 + (spec.legend !== false ? 1 : 0) + notes;
-}
-
 /** The price range the candles themselves cover. */
 function candleBounds(candles) {
   return {
@@ -117,16 +119,16 @@ function candleAxis(spec, candles, plotRows) {
 
 /**
  * Where each period sits, in plot cells: its body width, the gap between
- * periods, the pad that centres a short run, and the columns the run takes.
+ * periods, and the columns the run takes. The run starts at the axis.
  */
 function periodPlan(available, count) {
   const gap = count > 1 ? 1 : 0;
   const periodWidth = Math.max(1, Math.min(3, Math.floor(available / Math.max(1, count)) - gap)) || 1;
-  // One clear column between periods, and few candles in a wide chart sit in the
-  // middle rather than hugging the axis.
+  // One clear column between periods. Sat in the middle before, which left a
+  // wide chart floating away from its own axis.
   const stride = periodWidth + gap;
   const used = count * stride - gap;
-  return { periodWidth, stride, used, leftPad: Math.max(0, Math.floor((available - used) / 2)) };
+  return { periodWidth, stride, used, leftPad: 0 };
 }
 
 function centresOf({ stride, leftPad, periodWidth }, count) {
@@ -327,10 +329,18 @@ function emptyCandleRows(rows, width, skipped) {
 
 /** Plot rows after the notes have taken their share of the height budget. */
 function chartWithNotes(spec, candles, width, colours, noteCount) {
+  // Title, the label row, the legend and the notes are counts, not arithmetic:
+  // one ledger pays for them before the plot.
   return candleChart({
     spec,
     candles,
-    plotRows: plotRowsFor(spec, { chrome: chromeRows(spec, noteCount), fallback: 10 }),
+    plotRows: layoutFor(spec, {
+      title: spec.title ? 1 : 0,
+      labels: 1,
+      legend: spec.legend !== false ? 1 : 0,
+      notes: noteCount,
+      fallback: 10,
+    }).plotRows,
     width,
     colours,
   });

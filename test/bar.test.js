@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { cols, formatNumber, runsText } from "../src/core.js";
-import { renderBarRows, layoutVerticalBars, layoutHorizontalBars, verticalLabelRow, hiddenCategoryCount } from "../src/bar.js";
+import { renderBarRows, layoutVerticalBars, layoutHorizontalBars, measureVerticalBars } from "../src/bar.js";
 import { buildAxis } from "../src/axis.js";
 import { glyphFor, modeShape } from "../src/mosaic.js";
 import { styleOf, THEMES } from "../src/theme.js";
@@ -473,15 +473,15 @@ check("a textured bar tells its series apart without colour", () => {
 
 check("long bin labels are thinned instead of cut down", () => {
   // A histogram gives the bar fence labels wider than one bar slot. Slot
-  // labels would cut them to "0.0-"; point labels keep the whole text and drop
-  // the neighbours that collide.
+  // labels would cut them to "0.0-"; the label row a caller's own series gets
+  // keeps the whole text and drops the neighbours that collide.
   const labels = ["0.0-9.9", "10.0-19.9", "20.0-29.9", "30.0-39.9"];
-  const series = [{ name: "n", values: [4, 9, 6, 2] }];
-  const point = verticalLabelRow({ type: "bar", width: 30, slotLabels: false }, 30, labels, series);
-  const slot = verticalLabelRow({ type: "bar", width: 30 }, 30, labels, series);
+  const values = [4, 9, 6, 2];
+  const point = measureVerticalBars({ type: "bar", width: 30 }, labels, values).labelRow;
+  const slot = textRows(renderBarRows({ type: "bar", width: 30, labels, values })).join("\n");
   assert.ok(point.includes("0.0-9.9"), `the point label keeps its text: "${point}"`);
   assert.ok(!slot.includes("0.0-9.9"), `the slot label is cut to its slot: "${slot}"`);
-  assert.ok(cols(point) <= 30 && cols(slot) <= 30);
+  assert.ok(cols(point) <= 30, `the measured row fits: "${point}"`);
 });
 
 check("a two-series chart can turn its legend off", () => {
@@ -545,17 +545,27 @@ check("a noteRow key in the fence does not cost a plot row", () => {
   );
 });
 
-check("the exported hidden count is the count the note reports", () => {
+check("the measured hidden count is the count the note reports", () => {
   const labels = Array.from({ length: 30 }, (_, index) => `S${index}`);
   const values = labels.map((_, index) => index + 1);
-  const series = [{ name: "v", values }];
-  const spec = { type: "bar", width: 24, labels, values };
-  const hidden = hiddenCategoryCount(spec, 24, labels, series);
+  const spec = { type: "bar", width: 24, labels };
+  const { hidden } = measureVerticalBars({ ...spec, height: 8 }, labels, values);
   assert.ok(hidden > 0, `some categories are hidden (${hidden})`);
-  const note = textRows(renderBarRows({ ...spec, height: 8 })).find((row) => row.includes("hidden"));
+  const note = textRows(renderBarRows({ ...spec, height: 8, values })).find((row) => row.includes("hidden"));
   assert.ok(note, "the chart prints a note");
   assert.equal(Number(note.match(/\d+/)[0]), hidden, `the note reports the same count: "${note}"`);
-  assert.equal(hiddenCategoryCount({ type: "bar", width: 60 }, 60, ["a", "b"], [{ name: "v", values: [1, 2] }]), 0);
+  assert.equal(measureVerticalBars({ type: "bar", width: 60, height: 8 }, ["a", "b"], [1, 2]).hidden, 0);
+});
+
+check("a bar sits on the axis line, not under it", () => {
+  // The axis runs through the middle of the zero row. A full block there hung
+  // half a cell below the line, which reads as a bar starting under zero.
+  const rows = textRows(renderBarRows({
+    type: "bar", width: 30, height: 6, labels: ["A", "B"], values: [50, -30],
+  }));
+  const zero = rows.find((row) => row.includes("0┼")) ?? "";
+  assert.doesNotMatch(zero, /█/, `a bar hangs through the axis: "${zero}"`);
+  assert.match(zero, /[▀▄]/, `no bar meets the line at all: "${zero}"`);
 });
 
 console.log(`\n${checks}/${checks} checks passed`);

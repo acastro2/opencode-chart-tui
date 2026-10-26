@@ -6,6 +6,7 @@
 // its own geometry.
 
 import { glyphFor, modeName, modeShape } from "./mosaic.js";
+import { coerceList, policyFor } from "./values.js";
 import {
   displayWidth,
   graphemeWidth,
@@ -302,16 +303,24 @@ function seriesSource(spec, fallbackName) {
   return [{ name: spec.name ?? fallbackName, values: spec.values }];
 }
 
-/** A non-numeric point becomes zero, so one bad cell cannot drop a series. */
-function finiteOrZero(value) {
-  const number = Number(value);
-  return Number.isFinite(number) ? number : 0;
+/**
+ * The value policy the spec's family declares. The name is lowercased, because
+ * a fence that says "PIE" draws the same family as one that says "pie". A spec
+ * with no family keeps the strict policy: there is no declaration to read.
+ */
+function policyOf(spec) {
+  return policyFor(String(spec?.type ?? "").toLowerCase());
 }
 
-/** The numbers of one series, copied so padding cannot touch the caller's array. */
-function seriesValues(item) {
+/**
+ * The numbers of one series, copied so padding cannot touch the caller's array,
+ * and read by the same policy the footer reports. A value the policy drops stays
+ * a hole rather than a zero: the series position is the label's position, so a
+ * removed point would move every label after it.
+ */
+function seriesValues(item, policy) {
   const numbers = Array.isArray(item) ? item : (item?.values ?? []);
-  return [...numbers].map(finiteOrZero);
+  return coerceList(numbers, policy).values;
 }
 
 /** The name of a plain-array series: the spec's name, or the fallback. */
@@ -361,12 +370,15 @@ function labelsFor(spec, length) {
  * The series shape every chart family shares: labels plus one or more named
  * series of numbers. Accepts `values: [..]` for a single series or
  * `series: [{ name, values }]`, and a plain array of numbers for a series.
- * Missing labels become their position.
+ * Missing labels become their position. Each value is read by the family's own
+ * value policy, so the drawing and the dispatcher's footer cannot disagree: a
+ * value the policy drops stays a hole in its slot, never a silent zero.
  */
 export function normalizeSeries(spec, fallbackName = "value") {
+  const policy = policyOf(spec);
   const series = [];
   for (const [index, item] of seriesSource(spec, fallbackName).entries()) {
-    const values = seriesValues(item);
+    const values = seriesValues(item, policy);
     if (values.length === 0) continue;
     series.push({ name: String(itemName(item, spec, index, fallbackName)), values });
   }

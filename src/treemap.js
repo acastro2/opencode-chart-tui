@@ -29,6 +29,7 @@ import {
 } from "./core.js";
 import { paletteOf, themeOf, THEMES } from "./theme.js";
 import { plotRows as plotRowsFor } from "./layout.js";
+import { coerce, policyFor } from "./values.js";
 
 /** How far a tile's interior is mixed towards the terminal background. */
 const SHADE = 0.5;
@@ -37,10 +38,13 @@ const EDGE = 0.85;
 /** The most of a box one band of items may take, so later items still get a row. */
 const ROW_LIMIT = 0.8;
 
+/** The shared fate of a leaf value: a blank and an unreadable one drop it. */
+const TREE_POLICY = policyFor("treemap");
+
 /** Whether a leaf is measurand: a treemap of nothing, zero or negatives is empty. */
 function positive(value) {
-  const number = Number(value);
-  return Number.isFinite(number) && number > 0 ? number : null;
+  const { value: number } = coerce(value, TREE_POLICY);
+  return number !== null && number > 0 ? number : null;
 }
 
 /** The `label` or `name` a source carries, before any fallback. */

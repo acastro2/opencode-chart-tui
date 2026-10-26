@@ -4,7 +4,8 @@
 // analytic area of the ellipse the renderer aims for. V1 (one glyph per cell)
 // is included as the baseline: it is the "all sub-cells inside" case.
 
-import { layoutPie, normalizeSlices } from "../src/pie.js";
+import { layoutPie } from "../src/pie.js";
+import { normalizeEntries as normalizeSlices } from "../src/core.js";
 import { glyphFor, modeShape } from "../src/mosaic.js";
 
 const WIDTH = 44;

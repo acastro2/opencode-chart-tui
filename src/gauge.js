@@ -21,6 +21,7 @@ import {
   truncate,
 } from "./core.js";
 import { niceMax } from "./axis.js";
+import { coerce, policyFor } from "./values.js";
 
 const LEFT = ["▏", "▎", "▍", "▌", "▋", "▊", "▉"];
 const TRACK = "░";
@@ -29,6 +30,8 @@ const MARK = "│";
 const MIN_BAR = 3;
 /** Below this many cells a value says nothing useful, so it is dropped. */
 const MIN_VALUE = 3;
+/** The shared fate of the value: a blank and an unreadable one read as zero. */
+const GAUGE_POLICY = policyFor("gauge");
 
 function leftGlyph(fraction) {
   const step = Math.round(Math.max(0, Math.min(1, fraction)) * 8);
@@ -40,9 +43,9 @@ function readWidth(spec) {
   return Math.max(16, Math.floor(spec.width ?? 48));
 }
 
-/** A value that is absent or unreadable reads as zero. */
+/** A value that is absent or unreadable reads as zero, the way the policy says. */
 function readValue(spec) {
-  return Number(spec.value) || 0;
+  return coerce(spec.value, GAUGE_POLICY).value;
 }
 
 /** The scale: the spec's own maximum, or one that fits the value, or 100. */

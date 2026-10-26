@@ -5,10 +5,10 @@ import {
   renderChartRows,
   renderPieRows,
   layoutPie,
-  normalizeSlices,
-  sliceGlyphs,
   renderLegend,
 } from "../src/pie.js";
+import { normalizeEntries as normalizeSlices, sliceGlyphs } from "../src/core.js";
+import { renderChart } from "../src/chart.js";
 import { availableModes, glyphFor, isComplete, modeShape } from "../src/mosaic.js";
 
 const WIDTH = 44;
@@ -492,6 +492,38 @@ check("styled rows drop the legend on request", () => {
   assert.equal(withLegend.length, plain.length + 2);
   assert.equal(plain.length, none.length);
   assert.equal(withLegend[0].runs[0].kind, "title");
+});
+
+check("a dropped-label note is paid for out of the height", () => {
+  // The note used to be appended after the disc had spent the whole height: at
+  // 16x4 the family drew five rows, so the guard hid one and the warning with
+  // it. The note is a row of the block now, so the disc is three rows and the
+  // block is exactly four.
+  const spec = { type: "pie", width: 16, height: 4, values: [1, 1], legend: false };
+  const rows = renderChart(spec).split("\n");
+  assert.equal(rows.length, 4, `the block is ${rows.length} rows, not the height`);
+  assert.equal(rows.at(-1), "2 labels dropped");
+  assert.doesNotMatch(rows.join("\n"), /rows? hidden/);
+});
+
+check("title, disc, note and legend all spend the same height", () => {
+  const spec = { type: "pie", width: 20, height: 8, title: "Mix", values: [1, 1] };
+  const rows = renderChart(spec).split("\n");
+  assert.equal(rows.length, 8, `the block is ${rows.length} rows, not the height`);
+  assert.equal(rows[0], "Mix");
+  assert.match(rows.join("\n"), /2 labels dropped/, "the note is inside the block");
+  assert.match(rows.at(-2), /^● /, "the legend keeps its rows");
+  assert.match(rows.at(-1), /^● /);
+  assert.doesNotMatch(rows.join("\n"), /rows? hidden/);
+});
+
+check("a block too small for its note still says rows were hidden", () => {
+  // Two rows cannot hold the disc's minimum plus a note. The family keeps the
+  // note and returns the block over budget; the guard names what it hid. What it
+  // must not do is drop the warning quietly.
+  const rows = renderChart({ type: "pie", width: 40, height: 2, values: [1, 1], legend: false }).split("\n");
+  assert.equal(rows.length, 2);
+  assert.match(rows.join("\n"), /rows hidden at height 2/, `the loss is not said:\n${rows.join("\n")}`);
 });
 
 console.log(`\n${checks}/${checks} checks passed`);

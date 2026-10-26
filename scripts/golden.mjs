@@ -1,10 +1,15 @@
 // Golden frames: the exact text every family draws at a fixed matrix of widths,
-// themes and mosaic modes.
+// themes and mosaic modes, plus one run-level frame per family and variant at a
+// fixed width and theme.
 //
 // Why: the property tests prove invariants, not the picture. A label can move one
 // column, a rim can lose a glyph, and every assertion still passes. A golden file
 // makes that change visible in review. `--update` is a human decision, never a
 // blind refresh: read the diff before you keep it.
+//
+// The text grid catches a missing glyph. The run grid catches what text cannot:
+// a kind demoted from `fill` to `outside`, a slice on the wrong series, or a
+// palette swap. Neither replaces the other.
 //
 // Usage:
 //   node scripts/golden.mjs --check     compare (default; exits 1 on drift)
@@ -14,7 +19,8 @@
 import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import { SAMPLES } from "./samples.mjs";
+import { SAMPLES, VARIANTS } from "./corpus.mjs";
+import { rowsFrames } from "./frames.mjs";
 import { renderChart } from "../src/chart.js";
 
 const ROOT = dirname(dirname(fileURLToPath(import.meta.url)));
@@ -24,101 +30,12 @@ const THEMES = ["dark", "light"];
 const MOSAICS = ["quadrant", "sextant", "octant"];
 const VARIANT_WIDTHS = [20, 40, 56, 80];
 const VARIANTS_FILE = "_variants.json";
-
-/**
- * Specs the one-sample-per-family grid cannot reach: grouped and stacked
- * series, multi-series lines, and the small-height paths where a note competes
- * with the plot for rows. Without these the grouped-bar floor bug drew for
- * months behind a green gate, because every sample had exactly one series.
- */
-export const VARIANTS = {
-  "bar-grouped": {
-    type: "bar",
-    title: "Bookings by state",
-    labels: ["Jul", "Aug", "Sep"],
-    series: [{ name: "Closed", values: [120, 90, 60] }, { name: "Open", values: [30, 60, 90] }],
-    height: 9,
-  },
-  "bar-stacked": {
-    type: "bar",
-    title: "Bookings by state",
-    labels: ["Jul", "Aug", "Sep"],
-    series: [{ name: "Closed", values: [120, 90, 60] }, { name: "Open", values: [30, 60, 90] }],
-    stacked: true,
-    height: 9,
-  },
-  "hbar-grouped": {
-    type: "hbar",
-    title: "Accounts by region",
-    labels: ["Globex", "Initech"],
-    series: [{ name: "This year", values: [42, 31] }, { name: "Last year", values: [30, 44] }],
-  },
-  "line-multi": {
-    type: "line",
-    title: "Revenue and cost",
-    labels: ["Jan", "Feb", "Mar", "Apr", "May"],
-    series: [{ name: "Revenue", values: [12, 18, 15, 22, 26] }, { name: "Cost", values: [9, 11, 12, 13, 15] }],
-    height: 9,
-  },
-  "area-stacked": {
-    type: "area",
-    title: "Traffic by source",
-    labels: ["A", "B", "C", "D"],
-    series: [{ name: "Base", values: [3, 4, 3, 5] }, { name: "Add-on", values: [2, 1, 2, 1] }],
-    stacked: true,
-    height: 9,
-  },
-  "area-stacked-single": {
-    type: "area",
-    title: "Traffic",
-    labels: ["A", "B", "C"],
-    series: [{ name: "Only", values: [3, 4, 3] }],
-    stacked: true,
-    height: 8,
-  },
-  "kanban-tight": {
-    type: "kanban",
-    title: "Sprint",
-    height: 9,
-    columns: [
-      { title: "Todo", cards: [{ title: "a" }, { title: "b" }] },
-      { title: "Doing", cards: [{ title: "c" }] },
-    ],
-  },
-  "candle-many": {
-    type: "candle",
-    title: "ACME",
-    labels: Array.from({ length: 12 }, (_, index) => `${index + 1}`),
-    candles: Array.from({ length: 12 }, (_, index) => ({
-      open: 10 + index, high: 12 + index, low: 9 + index, close: 11 + index,
-    })),
-    height: 8,
-  },
-  "bar-many": {
-    type: "bar",
-    title: "Thirty categories",
-    labels: Array.from({ length: 30 }, (_, index) => `S${index}`),
-    values: Array.from({ length: 30 }, (_, index) => index + 1),
-    height: 8,
-  },
-  "histogram-many": {
-    type: "histogram",
-    title: "Many bins",
-    values: Array.from({ length: 120 }, (_, index) => (index * 37) % 100),
-    bins: 60,
-    height: 12,
-  },
-  "candle-bad": {
-    type: "candle",
-    title: "One row missing a price",
-    candles: [
-      { open: 10, high: 12, low: 9, close: 11 },
-      { open: 11, high: 13, low: 10 },
-      { open: 12, high: 14, low: 11, close: 13 },
-    ],
-    height: 8,
-  },
-};
+const RUNS_FILE = "_runs.json";
+// One width and one theme on purpose: the run frames exist to catch a kind,
+// slice or colour mistake, not to re-test the width/theme matrix (the text
+// goldens do that). A fixed pair keeps _runs.json small enough to review.
+const RUN_WIDTH = 56;
+const RUN_THEME = "dark";
 
 function frameKey(width, theme, mosaic) {
   return `${width}-${theme}-${mosaic}`;
@@ -155,12 +72,49 @@ export function variantFrames() {
   return frames;
 }
 
+/**
+ * Every family and every variant at one width and theme, as styled runs. Keyed
+ * like the variants file: a family by its name, a variant by its variant name.
+ */
+export function runFrames(only = null) {
+  const frames = {};
+  for (const [type, sample] of Object.entries(SAMPLES)) {
+    if (only && type !== only) continue;
+    frames[type] = rowsFrames({ ...sample, type, width: RUN_WIDTH, theme: RUN_THEME });
+  }
+  if (only) return frames;
+  for (const [name, spec] of Object.entries(VARIANTS)) {
+    frames[name] = rowsFrames({ ...spec, width: RUN_WIDTH, theme: RUN_THEME });
+  }
+  return frames;
+}
+
+/** Why a run frame differs, or null when it matches. The first run, named. */
+function runDifference(want, got) {
+  if (!Array.isArray(want)) return "missing frame";
+  if (want.length !== got.length) return `${got.length} row(s), expected ${want.length}`;
+  for (let row = 0; row < want.length; row += 1) {
+    if (!Array.isArray(want[row])) return `row ${row + 1} is not a run list`;
+    if (want[row].length !== got[row].length) {
+      return `row ${row + 1}: ${got[row].length} run(s), expected ${want[row].length}`;
+    }
+    for (let index = 0; index < want[row].length; index += 1) {
+      for (const key of ["text", "kind", "slice", "fg", "bg"]) {
+        const before = JSON.stringify(want[row][index]?.[key]);
+        const after = JSON.stringify(got[row][index]?.[key]);
+        if (before !== after) return `row ${row + 1} run ${index + 1} ${key}: ${after}, expected ${before}`;
+      }
+    }
+  }
+  return null;
+}
+
 /** Write or compare all golden files. Returns counts; throws on drift. */
 export function checkGoldens({ update = false, family = null } = {}) {
   mkdirSync(DIR, { recursive: true });
   // A typo used to match nothing and pass with "0/0 frames match".
   if (family && !Object.hasOwn(SAMPLES, family)) {
-    return { checked: 0, failures: [`unknown family: ${family}`], updated: false };
+    return { checked: 0, runChecked: 0, failures: [`unknown family: ${family}`], updated: false };
   }
   const types = Object.keys(SAMPLES).filter((type) => !family || type === family);
   let checked = 0;
@@ -233,8 +187,36 @@ export function checkGoldens({ update = false, family = null } = {}) {
     }
   }
 
-  if (update) return { checked, failures, updated: true };
-  return { checked, failures, updated: false };
+  // Run-level goldens: one width, one theme, every family plus every variant.
+  // This is the gate a text frame cannot be: a wrong kind, slice or colour is a
+  // drift even when every character stays in place.
+  const runFile = join(DIR, RUNS_FILE);
+  const wanted = runFrames(family);
+  let runChecked = 0;
+  if (update) {
+    // A family update keeps the other families' frames; a full update replaces
+    // the file so a removed spec cannot leave a stale key behind.
+    const existing = family && existsSync(runFile) ? JSON.parse(readFileSync(runFile, "utf8")) : {};
+    writeFileSync(runFile, `${JSON.stringify({ ...existing, ...wanted })}\n`);
+    runChecked = Object.keys(wanted).length;
+  } else if (!existsSync(runFile)) {
+    failures.push(`runs/${RUNS_FILE}: missing ${runFile}`);
+  } else {
+    const expected = JSON.parse(readFileSync(runFile, "utf8"));
+    for (const [key, rows] of Object.entries(wanted)) {
+      runChecked += 1;
+      const reason = runDifference(expected[key], rows);
+      if (reason) failures.push(`runs/${key}: ${reason}`);
+    }
+    if (!family) {
+      for (const key of Object.keys(expected)) {
+        if (!(key in wanted)) failures.push(`runs/${key}: stale frame (no longer generated)`);
+      }
+    }
+  }
+
+  if (update) return { checked, runChecked, failures, updated: true };
+  return { checked, runChecked, failures, updated: false };
 }
 
 /** The files in test/golden that no longer belong to a family. */
@@ -242,7 +224,7 @@ export function extraGoldenFiles() {
   if (!existsSync(DIR)) return [];
   const types = new Set(Object.keys(SAMPLES));
   return readdirSync(DIR)
-    .filter((name) => name.endsWith(".json") && name !== VARIANTS_FILE && !types.has(name.slice(0, -5)))
+    .filter((name) => name.endsWith(".json") && name !== VARIANTS_FILE && name !== RUNS_FILE && !types.has(name.slice(0, -5)))
     .map((name) => join(DIR, name));
 }
 
@@ -253,12 +235,15 @@ async function main() {
   const family = familyAt >= 0 ? args[familyAt + 1] : null;
   const result = checkGoldens({ update, family });
   if (update) {
-    console.log(`golden: wrote ${result.checked} frames for ${family ?? "all families"}`);
+    console.log(`golden: wrote ${result.checked} text frames and ${result.runChecked} run frames for ${family ?? "all families"}`);
     return;
   }
   for (const failure of result.failures) console.error(`golden: ${failure}`);
   for (const extra of extraGoldenFiles()) console.error(`golden: stale file ${extra}`);
-  console.log(`golden: ${Math.max(0, result.checked - result.failures.length)}/${result.checked} frames match`);
+  const runFailures = result.failures.filter((failure) => failure.startsWith("runs/")).length;
+  const textFailures = result.failures.length - runFailures;
+  console.log(`golden: ${Math.max(0, result.checked - textFailures)}/${result.checked} text frames match`);
+  console.log(`golden: ${Math.max(0, result.runChecked - runFailures)}/${result.runChecked} run frames match`);
   if (result.failures.length > 0 || extraGoldenFiles().length > 0) process.exitCode = 1;
 }
 

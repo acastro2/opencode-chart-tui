@@ -273,7 +273,16 @@ check("series beat values and pad to the longest input", () => {
   assert.equal(normalizeSeries({ name: "total", series: [{ values: [1] }] }).series[0].name, "total");
   assert.equal(normalizeSeries({ values: [1] }, "n").series[0].name, "n");
 
-  assert.deepEqual(normalizeSeries({ values: ["x", 2] }).series[0].values, [0, 2], "a bad point becomes zero");
+  // A named family fills a bad point with the zero its policy draws. A spec
+  // that names no family has no declaration to read, so the point stays a hole
+  // rather than inventing a zero; no drawing path reaches it that way, because
+  // the dispatcher always hands the family the type it drew.
+  assert.deepEqual(
+    normalizeSeries({ type: "bar", values: ["x", 2] }).series[0].values,
+    [0, 2],
+    "a bar's bad point becomes zero",
+  );
+  assert.deepEqual(normalizeSeries({ values: ["x", 2] }).series[0].values, [null, 2], "an unnamed family keeps the hole");
   assert.deepEqual(normalizeSeries({ labels: "ab", series: [{ values: [1, 2] }] }).labels, ["1", "2"]);
   assert.deepEqual(normalizeSeries({ labels: [null], series: [{ values: [1] }] }).labels, ["1"]);
   assert.deepEqual(
@@ -446,6 +455,15 @@ check("a misspelt mosaic mode falls back instead of throwing", () => {
 
   assert.equal(makeSampler("OCTANT").mosaic, "sextant", "a name is exact, not case-folded");
   assert.equal(makeSampler(true).mosaic, "sextant", "true is not a mode name");
+});
+
+check("a box narrower than the floor is treated as unmeasured", () => {
+  // A re-layout can report 0 for a frame; drawing a 16-cell chart into it and
+  // then back is the flicker that showed up when pasting an image.
+  for (const available of [0, 1, 8, 15]) {
+    assert.equal(measureWidth(available), 160, `a ${available}-cell box is not a real pane`);
+  }
+  assert.equal(measureWidth(16), 16, "the floor itself is a real width");
 });
 
 console.log(`\n${checks}/${checks} checks passed`);

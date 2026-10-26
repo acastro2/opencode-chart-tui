@@ -23,18 +23,20 @@ import {
   wrapText,
 } from "./core.js";
 import { themeOf } from "./theme.js";
+import { coerce, policyFor } from "./values.js";
 
 export const HEAT_LOW = "#1f3b57";
 export const HEAT_HIGH = "#e5695f";
 
+/** The shared fate of a heat map value: a blank and an unreadable one are holes. */
+const HEAT_POLICY = policyFor("heatmap");
+
 /**
- * One value the map can draw. Anything that is not a finite number stays null:
- * a bad value is a hole to report, never a zero to paint as data.
+ * One value the map can draw. The policy leaves a hole (null) for anything not
+ * a finite number: a bad value is a gap to report, never a zero to paint as data.
  */
 function heatValue(value) {
-  if (value === null || value === undefined || value === "") return null;
-  const number = Number(value);
-  return Number.isFinite(number) ? number : null;
+  return coerce(value, HEAT_POLICY).value;
 }
 
 /* -------------------------------------------------------------------------- */

@@ -29,10 +29,14 @@ import {
 import { themeOf } from "./theme.js";
 import { axisRow, baseline, buildAxis, pointLabelLayout, pointLabelRow, subRowValue } from "./axis.js";
 import { plotRows as plotRowsFor } from "./layout.js";
+import { coerce, policyFor } from "./values.js";
 
 export const WATERFALL_UP = "#57c98a";
 export const WATERFALL_DOWN = "#e5695f";
 export const WATERFALL_TOTAL = "#4e9de0";
+
+/** The shared fate of a delta: a blank reads as 0, an unreadable one is dropped. */
+const WATERFALL_POLICY = policyFor("waterfall");
 
 const UP = 0;
 const DOWN = 1;
@@ -44,12 +48,12 @@ function arrayOf(value) {
   return Array.isArray(value) ? value : [];
 }
 
-/** Only the deltas that can be drawn, each with the index that names it. */
+/** The deltas the policy keeps, each with the index that names it. */
 function finiteDeltas(values) {
   const pairs = [];
   for (const [index, raw] of values.entries()) {
-    const delta = Number(raw);
-    if (Number.isFinite(delta)) pairs.push([index, delta]);
+    const { value } = coerce(raw, WATERFALL_POLICY);
+    if (value !== null) pairs.push([index, value]);
   }
   return pairs;
 }

@@ -17,7 +17,7 @@ import {
 import { themeOf } from "./theme.js";
 import { axisRow, baseline, buildAxis, pointLabelRow } from "./axis.js";
 import { hiddenPeriodsNote, normalizeCandles, skippedCandlesNote } from "./candle.js";
-import { plotRows as plotRowsFor } from "./layout.js";
+import { layoutFor } from "./layout.js";
 
 function axisRun(text) {
   return { text, slice: -1, kind: "axis" };
@@ -31,15 +31,6 @@ function legendMark(text, color) {
   return { text, slice: -1, kind: "legend-mark", color };
 }
 
-/** Rows around the plot: the title, the label row, the legend and any notes. */
-function chromeRows(spec, notes = 0) {
-  return (spec.title ? 1 : 0) + 1 + (spec.legend === false ? 0 : 1) + notes;
-}
-
-/** Total rows minus title, labels, legend and notes; `plotHeight` wins. */
-function chartPlotRows(spec, notes = 0) {
-  return plotRowsFor(spec, { chrome: chromeRows(spec, notes), fallback: 10, min: 3, max: 30 });
-}
 function chartWidth(spec) {
   return Math.max(16, Math.floor(spec.width ?? 48));
 }
@@ -173,10 +164,18 @@ function drawBars(candles, plot, colours) {
 
 /** The axis, the width left for periods, and where each period sits. */
 function plotOf(spec, candles, width, notes = 0) {
+  // Title, the label row, the legend and the notes are counted once here, and
+  // the ledger pays for them before the plot.
   const axis = buildAxis({
     min: Math.min(...candles.map((candle) => candle.low)),
     max: Math.max(...candles.map((candle) => candle.high)),
-    plotRows: chartPlotRows(spec, notes),
+    plotRows: layoutFor(spec, {
+      title: spec.title ? 1 : 0,
+      labels: 1,
+      legend: spec.legend === false ? 0 : 1,
+      notes,
+      fallback: 10,
+    }).plotRows,
     ticks: spec.ticks ?? 4,
     zero: spec.zero === true,
   });

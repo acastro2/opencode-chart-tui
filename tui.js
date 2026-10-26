@@ -127,7 +127,9 @@ class ChartRenderable extends Renderable {
       // `width` is NaN when Yoga has no measurement to offer; measureWidth turns
       // that into the cap instead of handing NaN to every family.
       const target = this.targetWidth(width);
-      return { width: target, height: this.ensureRows(target).length };
+      // One blank row after the block: without it the next fence's title starts
+      // on the row under this chart's axis, and reads as part of this chart.
+      return { width: target, height: this.ensureRows(target).length + 1 };
     });
   }
 
@@ -169,11 +171,18 @@ class ChartRenderable extends Renderable {
   onResize(width) {
     if (this.pinned) return;
     const target = this.targetWidth(width);
-    if (target !== this.renderedWidth) {
+    // A scrollbar or a pasted image moves the box by a column or two, and
+    // redrawing for that is what made charts flicker. Ignore the jitter.
+    if (Math.abs(target - this.renderedWidth) < 2) return;
+    if (this.resizeTimer) clearTimeout(this.resizeTimer);
+    this.resizeTimer = setTimeout(() => {
+      this.resizeTimer = null;
+      if (target === this.renderedWidth) return;
       this.ensureRows(target);
       this.invalidateIntrinsicSize();
       this.requestRender();
-    }
+    }, 250);
+    this.resizeTimer.unref?.();
   }
 
   renderSelf(buffer) {
