@@ -325,41 +325,73 @@ function spreadColumns(columnCount, width) {
  * labels own the space to its left, and whatever is left over grows the gaps,
  * up to a cap so the bands between them stay readable.
  */
+/** Fill the gaps evenly up to the readable cap; returns what is left over. */
+function fillGaps(gaps, leftover) {
+  let open = leftover;
+  while (open > 0) {
+    let grew = false;
+    for (let index = 0; index < gaps.length && open > 0; index++) {
+      if (gaps[index] >= GAP_CAP) continue;
+      gaps[index] += 1;
+      open -= 1;
+      grew = true;
+    }
+    if (!grew) break;
+  }
+  return open;
+}
+
+/** After the gaps cap, widen the node bars; each step costs one cell per column. */
+function fillBars(barWidth, leftover, columnCount) {
+  let width = barWidth;
+  let open = leftover;
+  while (open >= columnCount && width < BAR_CAP) {
+    width += 1;
+    open -= columnCount;
+  }
+  return { barWidth: width, leftover: open };
+}
+
+/** Whatever is still spare widens the gaps past the cap, evenly. */
+function fillRemainder(gaps, leftover) {
+  let open = leftover;
+  for (let index = 0; index < gaps.length && open > 0; index++) {
+    const add = Math.min(open, Math.ceil(open / (gaps.length - index)));
+    gaps[index] += add;
+    open -= add;
+  }
+}
+
+/** Where each column starts, given the settled bar width and gaps. */
+function columnPositions(count, barWidth, gutter, gaps) {
+  return Array.from(
+    { length: count },
+    (_, column) => gutter + column * barWidth + gaps.slice(0, column).reduce((sum, value) => sum + value, 0),
+  );
+}
+
 function planColumns(columns, width) {
   let { barWidth, gutter, gaps } = shrinkColumns(columns, width);
   const span = () => spanOf(columns.length, barWidth, gutter, gaps);
   if (span() > width) return spreadColumns(columns.length, width);
 
-  let leftover = width - span();
-  while (leftover > 0) {
-    let grew = false;
-    for (let index = 0; index < gaps.length && leftover > 0; index++) {
-      if (gaps[index] >= GAP_CAP) continue;
-      gaps[index] += 1;
-      leftover -= 1;
-      grew = true;
-    }
-    if (!grew) break;
-  }
-  // The gaps are capped so bands stay readable, but the frame is not: widen the
-  // node bars next, then let the gaps pass the cap evenly. Before this, a wide
-  // chart spent half its width on nothing.
-  while (leftover >= columns.length && barWidth < BAR_CAP) {
-    barWidth += 1;
-    leftover -= columns.length;
-  }
-  for (let index = 0; index < gaps.length && leftover > 0; index++) {
-    const add = Math.min(leftover, Math.ceil(leftover / (gaps.length - index)));
-    gaps[index] += add;
-    leftover -= add;
-  }
-  // The columns start after the first label gutter. Centring them in a wide
-  // chart shrank the flow into the middle of the frame.
-  const leftPad = 0;
-  const positions = columns.map(
-    (_, column) => leftPad + gutter + column * barWidth + gaps.slice(0, column).reduce((sum, value) => sum + value, 0),
-  );
-  return { barWidth, gutter, gaps, leftPad, positions };
+  // The gaps are capped so bands stay readable, but the frame is not: fill the
+  // gaps to the cap, widen the node bars next, then let the gaps pass the cap
+  // evenly. Before this, a wide chart spent half its width on nothing.
+  let leftover = fillGaps(gaps, width - span());
+  const grown = fillBars(barWidth, leftover, columns.length);
+  barWidth = grown.barWidth;
+  leftover = grown.leftover;
+  fillRemainder(gaps, leftover);
+
+  return {
+    barWidth,
+    gutter,
+    gaps,
+    // The columns start after the first label gutter, not centred in the frame.
+    leftPad: 0,
+    positions: columnPositions(columns.length, barWidth, gutter, gaps),
+  };
 }
 
 /** Give every node a whole-cell height and a centred top, column by column. */
