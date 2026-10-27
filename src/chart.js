@@ -315,19 +315,18 @@ function countPhrase(count) {
 /**
  * The note for values the chart could not draw, in the words the family's own
  * policy used: a value kept in place reads as a zero, a value the family
- * removed reads as dropped, and both groups are counted apart. A family that
+ * removed reads as dropped, and the groups are counted apart. A family that
  * names its own losses keeps the dispatcher quiet, or one loss is reported
- * twice. A hole is a slot kept empty, so it counts with the zeros: nothing was
- * removed, and today no family reports holes at chart level.
+ * twice. A hole is a slot kept empty: nothing was drawn and nothing was removed,
+ * so it gets its own phrase instead of pretending to be a zero.
  */
 function valueNote(type, tally) {
   if (policyFor(type).selfReports) return "";
-  const kept = tally.zeroed + tally.holes;
-  const total = kept + tally.dropped;
-  if (total === 0) return "";
-  if (tally.dropped === 0) return `${countPhrase(total)} treated as 0`;
-  if (kept === 0) return `${countPhrase(tally.dropped)} dropped`;
-  return `${countPhrase(kept)} treated as 0 and ${countPhrase(tally.dropped)} dropped`;
+  const parts = [];
+  if (tally.zeroed > 0) parts.push(`${countPhrase(tally.zeroed)} treated as 0`);
+  if (tally.holes > 0) parts.push(`${countPhrase(tally.holes)} kept as a hole`);
+  if (tally.dropped > 0) parts.push(`${countPhrase(tally.dropped)} dropped`);
+  return parts.join(" and ");
 }
 
 /** How many values the spec's lists hold that the chart cannot draw outright. */
@@ -337,7 +336,11 @@ function valueTally(spec, type) {
   const lists = valueLists(spec);
   // A gauge and a progress bar draw one scalar, not a list. It is data all the
   // same, so an unreadable value must be counted rather than silently drawn as 0.
-  if (type === "gauge" || type === "progress") lists.push([spec.value]);
+  // An absent key is not a value at all: a gauge with no `value` says 0.0% and
+  // nothing else, which is what it did before the tally learned about scalars.
+  if ((type === "gauge" || type === "progress") && spec.value !== undefined) {
+    lists.push([spec.value]);
+  }
   for (const list of [...lists, ...rowLists(spec, type)]) {
     const counted = coerceList(listValues(list), policy);
     tally.zeroed += counted.zeroed;

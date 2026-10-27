@@ -12,13 +12,40 @@
 // test/schema.test.js calls checkContract() directly, so the gate also runs with
 // `npm test` even though package.json has no schema:check script.
 
-import { readFileSync } from "node:fs";
+import { readFileSync, readdirSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { CHART_TYPES } from "../src/chart.js";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const SCHEMA = join(HERE, "..", "schema", "chart.schema.json");
+const SRC = join(HERE, "..", "src");
+
+/**
+ * Keys a family reads that are deliberately not properties: `markers` is only
+ * read by the plain-text pie wrapper, never on the fence path.
+ */
+export const INTERNAL_KEYS = Object.freeze(["markers"]);
+
+/**
+ * Every `spec.<key>` a source file reads. This is what makes the check a check
+ * of the code, not a comparison of two hand-written lists: a family that starts
+ * reading a new key fails until the schema documents it.
+ */
+export function readSpecKeys(dir = SRC) {
+  const keys = new Set();
+  const files = [
+    ...readdirSync(dir).filter((name) => name.endsWith(".js")).map((name) => join(dir, name)),
+    // The plugin half reads the fence too: `themeFor` takes boundaryColor and the
+    // renderable injects width, theme and cellAspect.
+    join(HERE, "..", "tui.js"),
+  ];
+  for (const file of files) {
+    const text = readFileSync(file, "utf8");
+    for (const match of text.matchAll(/\bspec\??\.([A-Za-z_$][\w$]*)/g)) keys.add(match[1]);
+  }
+  return [...keys].sort();
+}
 
 // Keys that are front matter: they sit above the data and mean the same thing in
 // every family. `type` is the one the renderer dispatches on.
@@ -195,14 +222,42 @@ function aliasProblems(schema) {
   return problems;
 }
 
+/** Every key the code reads is documented, and every documented key is read. */
+function sourceProblems(schema, readKeys) {
+  const properties = schema?.properties ?? {};
+  const documented = new Set(Object.keys(properties));
+  const renamed = new Set(Object.keys(RENAMED_KEYS));
+  const internal = new Set(INTERNAL_KEYS);
+  const problems = [];
+
+  for (const key of readKeys) {
+    if (documented.has(key) || renamed.has(key) || internal.has(key)) continue;
+    problems.push(`the code reads "${key}", which the schema does not document`);
+  }
+  const read = new Set(readKeys);
+  for (const key of documented) {
+    if (!read.has(key)) problems.push(`the schema documents "${key}", which no family reads`);
+  }
+  return problems;
+}
+
 /**
  * Every way the schema and the code disagree, as plain sentences. An empty list
- * is the contract holding. `schema` and `types` can be replaced so a test can
- * prove a broken copy is caught instead of only checking that the real one is
- * not.
+ * is the contract holding. `schema`, `types` and `readKeys` can be replaced so a
+ * test can prove a broken copy is caught instead of only checking that the real
+ * one is not.
  */
-export function contractProblems(schema = readSchema(), types = Object.keys(CHART_TYPES)) {
-  return [...typeProblems(schema, types), ...keyProblems(schema), ...aliasProblems(schema)];
+export function contractProblems(
+  schema = readSchema(),
+  types = Object.keys(CHART_TYPES),
+  readKeys = readSpecKeys(),
+) {
+  return [
+    ...typeProblems(schema, types),
+    ...keyProblems(schema),
+    ...aliasProblems(schema),
+    ...sourceProblems(schema, readKeys),
+  ];
 }
 
 /** The check, with everything it looked at, for a caller that wants counts. */

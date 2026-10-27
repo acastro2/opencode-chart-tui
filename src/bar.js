@@ -271,9 +271,14 @@ export function measureVerticalBars(spec, labels, values, { notes = 0 } = {}) {
   // Retry with the hidden-category note reserved, so its row comes out of the
   // same ledger and the caller prints exactly `height` rows.
   const fitted = noteCostsARow ? layoutFor(spec, { ...counts, notes: notes + 1 }).plotRows : plot;
+  // A shorter plot can change the axis gutter, so the answer must come from the
+  // plan that will actually be drawn, not the first one.
+  const drawn = fitted === plot
+    ? plan
+    : verticalPlan({ ...fence, plotHeight: fitted }, fence.width, labels, [{ name: "count", values }]);
   return {
-    labelRow: labelRow(fence, plan, labels),
-    hidden: plan.hidden,
+    labelRow: labelRow(fence, drawn, labels),
+    hidden: drawn.hidden,
     spec: { ...fence, plotHeight: fitted },
   };
 }

@@ -18,6 +18,7 @@ import {
   checkContract,
   contractProblems,
   readSchema,
+  readSpecKeys,
 } from "../scripts/schema.mjs";
 
 let checks = 0;
@@ -129,6 +130,19 @@ check("a rename that loses the old key fails the check", () => {
     copy.properties.showPercent.description = "Bars: print the share beside each value.";
   }));
   assert.ok(problems.some((problem) => problem.includes('"percent"')), problems.join("; "));
+});
+
+check("a key the code reads but the schema omits fails the check", () => {
+  // The gate is a check of the code, not of two hand-written lists: this is what
+  // catches a family that starts reading a key nobody documented.
+  const problems = contractProblems(schema, Object.keys(CHART_TYPES), [...readSpecKeys(), "hologram"]);
+  assert.ok(problems.some((problem) => problem.includes('"hologram"')), problems.join("; "));
+});
+
+check("a documented key no family reads fails the check", () => {
+  const read = readSpecKeys().filter((key) => key !== "slices");
+  const problems = contractProblems(schema, Object.keys(CHART_TYPES), read);
+  assert.ok(problems.some((problem) => problem.includes('"slices"')), problems.join("; "));
 });
 
 console.log(`\n${checks}/${checks} checks passed`);

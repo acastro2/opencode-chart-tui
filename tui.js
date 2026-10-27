@@ -177,12 +177,22 @@ class ChartRenderable extends Renderable {
     if (this.resizeTimer) clearTimeout(this.resizeTimer);
     this.resizeTimer = setTimeout(() => {
       this.resizeTimer = null;
-      if (target === this.renderedWidth) return;
+      if (this.disposed || target === this.renderedWidth) return;
       this.ensureRows(target);
       this.invalidateIntrinsicSize();
       this.requestRender();
     }, 250);
     this.resizeTimer.unref?.();
+  }
+
+  /** Drop a pending resize so a destroyed chart is never asked to redraw. */
+  destroy() {
+    this.disposed = true;
+    if (this.resizeTimer) {
+      clearTimeout(this.resizeTimer);
+      this.resizeTimer = null;
+    }
+    super.destroy?.();
   }
 
   renderSelf(buffer) {

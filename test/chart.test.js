@@ -370,4 +370,16 @@ check("the height guard keeps its count at a narrow width", () => {
   }
 });
 
+check("a gauge with no value says nothing about a value", () => {
+  // An absent key is not an unreadable value. The tally learned about scalars
+  // and started reporting `1 non-numeric value treated as 0` for a bare gauge.
+  for (const type of ["gauge", "progress"]) {
+    const text = textRows(renderChartRows({ type, width: 40, title: "T" })).join("\n");
+    assert.doesNotMatch(text, /non-numeric|treated as 0|dropped/, `${type} reports a missing value:\n${text}`);
+  }
+  // An explicit null is a value, and it is unreadable.
+  const nulled = textRows(renderChartRows({ type: "gauge", width: 40, value: null })).join("\n");
+  assert.match(nulled, /treated as 0/, `an explicit null is silent:\n${nulled}`);
+});
+
 console.log(`\n${checks}/${checks} checks passed`);
