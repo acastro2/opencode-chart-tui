@@ -198,15 +198,15 @@ install separately, because installing a plugin does not write into your skills
 directory:
 
 ```sh
-git clone https://github.com/acastro2/opencode-chart-tui
-cd opencode-chart-tui && npm run skill:install
+npx skills add acastro2/opencode-chart-tui --skill opencode-charts -g
 ```
 
-That links `skills/opencode-charts` into `~/.agents/skills` (and the OpenCode
-skills directory when it exists), so edits to `SKILL.md` apply at the next
-session. From a plugin-only install, copy the same directory out of the package
-(`…/opencode-charts/skills/opencode-charts`) into `~/.agents/skills/`. Restart
-the agent afterwards; skills load at session start.
+That is the one-liner. From a checkout you can instead run
+`npm run skill:install`, which links `skills/opencode-charts` into
+`~/.agents/skills` (and the OpenCode skills directory when it exists), so edits
+to `SKILL.md` apply at the next session. From a plugin-only install, the package
+carries the same directory under `skills/opencode-charts`. Restart the agent
+afterwards; skills load at session start.
 
 <details>
 <summary><b>Other ways to load it, if you need them</b></summary>

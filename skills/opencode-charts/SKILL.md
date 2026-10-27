@@ -1,6 +1,6 @@
 ---
 name: opencode-charts
-description: Draw a chart in the OpenCode terminal from a ```chart fenced block whose body is JSON. Reach for one as naturally as a Mermaid diagram: whenever a reply involves numbers that compare, a trend over time, a share of a whole, a ranking, a distribution, a plan or timeline, a flow, a hierarchy, or the state of work, draw the family that carries the point instead of listing figures. Also use when the user asks for a specific chart (pie, bar, line, histogram, candlestick, waterfall, heat map, gauge, radar, treemap, sankey, kanban, gantt) or when a chart that is already up needs its type, size or colours changed. Not for sharing charts outside the terminal (use a document or an image for that).
+description: "Draw a chart in the OpenCode terminal from a ```chart fenced block whose body is JSON. Reach for one as naturally as a Mermaid diagram: whenever a reply involves numbers that compare, a trend over time, a share of a whole, a ranking, a distribution, a plan or timeline, a flow, a hierarchy, or the state of work, draw the family that carries the point instead of listing figures. Also use when the user asks for a specific chart (pie, bar, line, histogram, candlestick, waterfall, heat map, gauge, radar, treemap, sankey, kanban, gantt) or when a chart that is already up needs its type, size or colours changed. Not for sharing charts outside the terminal (use a document or an image for that)."
 ---
 
 # Charts in the terminal
@@ -214,8 +214,8 @@ Renamed keys still draw and are reported in the footer: `percent` → `showPerce
 Two installs are needed, and they are independent:
 
 ```sh
-opencode plugin add acastro2/opencode-chart-tui   # draws the fence
-npm run skill:install                            # makes agents reach for it
+npx skills add acastro2/opencode-chart-tui --skill opencode-charts -g
+opencode plugin add acastro2/opencode-chart-tui
 ```
 
-`skill:install` links this directory into `~/.agents/skills` (and the OpenCode skills directory when it exists), so edits here apply at the next session. From a plugin install with no checkout, copy `skills/opencode-charts` out of the installed package into `~/.agents/skills/`. Skills load at session start; restart after installing.
+The first makes agents reach for the fence; the second draws it. From a checkout, `npm run skill:install` links this directory into `~/.agents/skills` instead, so edits here apply at the next session. From a plugin-only install with no checkout, the package carries `skills/opencode-charts`; copy it into `~/.agents/skills/`. Skills load at session start; restart after installing.
