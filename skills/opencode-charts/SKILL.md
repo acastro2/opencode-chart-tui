@@ -5,9 +5,9 @@ description: Draw a chart in the OpenCode terminal from a ```chart fenced block 
 
 # Charts in the terminal
 
-A chart is a fenced block whose language is `chart` and whose body is a JSON object. The OpenCode TUI replaces the fence with the drawing. A body that cannot be read shows the reason and the fence itself, so nothing fails silently.
+A chart is a fenced block whose language is `chart` and whose body is a JSON object. The OpenCode TUI replaces the fence with the drawing. A body that cannot be read shows `chart: <reason>` above the fence itself, so nothing fails silently.
 
-This skill ships with [opencode-chart-tui](https://github.com/acastro2/opencode-chart-tui): the plugin draws the charts, `src/` holds the renderer, `schema/chart.schema.json` describes every key, and `review/renders.txt` has every family as plain text. The repo's README gallery shows each family as a picture next to the fence that drew it.
+This skill ships with [opencode-chart-tui](https://github.com/acastro2/opencode-chart-tui): the plugin draws the charts, `src/` holds the renderer, `schema/chart.schema.json` describes every key, `review/renders.txt` has every family as plain text, and `docs/HANDOFF.md` explains the internals. The repo's README gallery shows each family as a picture next to the fence that drew it.
 
 ## Use them like diagrams
 
@@ -22,13 +22,14 @@ A chart in a reply is communication, not decoration. The same way a Mermaid bloc
 | how these values are spread | `histogram` |
 | ahead of or behind a target | `gauge`, `progress` |
 | how a number got from A to B, and what moved it | `waterfall` |
-| price moved within each period | `candlestick` (filled body), `ohlc` (open/close ticks) |
+| price moved within each period | `candlestick` (filled body), `candle`, `ohlc` (open/close ticks) |
 | a plan with dates and milestones | `gantt` |
 | where a flow goes, and how much is lost | `sankey` |
 | what fills the space, grouped | `treemap` |
 | how options compare on several axes | `radar` (one shared `max` across charts) |
 | the state of the work right now | `kanban` |
 | exact figures, or a figure beside a bar or a heat tint | `table` |
+| how two numbers relate across pairs | `scatter` |
 
 Etiquette:
 
@@ -41,79 +42,134 @@ Etiquette:
 
 ## Rules
 
-- Name the `type`. If it is missing the shape of the data decides (slices → pie, rows → heat map, values or series → bar) and the chart says so in a footer.
-- Leave `width` out unless the chart should be narrow. With no width it uses the pane, stopping at 110 columns for grid-like families (treemap, kanban, table, heat map) and 160 for the rest.
+- Name the `type`. There are 23: `pie`, `donut`, `bar`, `column`, `hbar`, `histogram`, `candle`, `candlestick`, `ohlc`, `line`, `area`, `sparkline`, `scatter`, `heatmap`, `gauge`, `progress`, `waterfall`, `table`, `radar`, `treemap`, `sankey`, `kanban`, `gantt`. If it is missing, the shape of the data decides (slices → pie, rows → heat map, values or series → bar) and the chart says so in a footer.
+- `bar` is an alias of `column`: both draw vertical bars. Use `hbar` for horizontal bars. `candle` and `candlestick` share one renderer, and `ohlc` draws ticks on the same data.
+- `height` is the **total rows** of the block: title, label row, legend and notes included. `plotHeight` sets the plot rows and overrides the plot part of `height`. A chart never draws more rows than `height`.
+- Leave `width` out unless the chart should be narrow. With no width it uses the pane, stopping at 110 columns for grid-like families (treemap, kanban, table, heat map) and 160 for the rest. A width wider than the pane is clipped to the pane.
 - JSON with comments (`//`, `/* */`) and trailing commas is accepted.
-- Read the muted footer under a chart before trusting the picture: it reports a guessed type, a key that was renamed, or values that were not numbers. `chart: <reason>` above the source means the body could not be parsed.
+- Read the muted footer under a chart before trusting the picture. It reports a guessed type, a renamed key, or a value the chart could not draw: `N treated as 0`, `N dropped`, or `N kept as a hole`. A hole keeps the slot and the alignment; a dropped value is removed and counted.
 - Prefer `labels` + `values` for one series, `series: [{name, values}]` for several, `slices` for a pie.
 - Keep values positive where the family needs it (pie, treemap, sankey drops negatives).
+- A `mosaic` name the library does not know falls back to `sextant` and draws; it does not throw.
 
 ## One example per family
 
+**pie**
 ```chart
 {"type":"pie","title":"Pipeline","slices":[["Closed won",62],["In flight",28],["At risk",10]]}
 ```
 
+**donut**
+```chart
+{"type":"donut","title":"Spend","labels":["Cloud","Salaries","Tools"],"values":[44,38,18],"donut":true}
+```
+
+**bar** (vertical; `column` is the same)
 ```chart
 {"type":"bar","title":"Bookings","labels":["Jul","Aug","Sep","Oct"],"values":[118,132,146,168]}
 ```
 
+**bar, stacked and normalized**
 ```chart
 {"type":"bar","title":"Pipeline mix","stacked":true,"normalized":true,"labels":["Jul","Aug"],"series":[{"name":"Closed","values":[80,50]},{"name":"Open","values":[20,50]}]}
 ```
 
+**column**
+```chart
+{"type":"column","title":"Bookings","labels":["Jul","Aug","Sep","Oct"],"values":[120,150,168,141],"height":9}
+```
+
+**hbar**
 ```chart
 {"type":"hbar","title":"Accounts","sort":true,"labels":["Globex","Initech","Umbrella","Soylent"],"values":[4200,3100,2900,880]}
 ```
 
+**line**
 ```chart
 {"type":"line","title":"Revenue","labels":["Jan","Feb","Mar","Apr"],"series":[{"name":"Revenue","values":[118,124,131,142]}]}
 ```
 
+**area, stacked**
 ```chart
 {"type":"area","title":"Booking mix","stacked":true,"labels":["Q1","Q2","Q3","Q4"],"series":[{"name":"Base","values":[40,55,60,72]},{"name":"Expansion","values":[12,18,25,31]}]}
 ```
 
+**sparkline**
+```chart
+{"type":"sparkline","title":"Pulse","values":[3,5,4,7,6,9,8,11,10,12]}
+```
+
+**histogram**
 ```chart
 {"type":"histogram","title":"Ticket size","values":[3,5,5,6,7,7,8,8,9,9,10,11,12,13,15,18,22,26,31,44]}
 ```
 
+**candlestick**
 ```chart
 {"type":"candlestick","title":"ACME","labels":["Mon","Tue","Wed","Thu","Fri"],"values":[[10,14,8,12],[12,13,9,10],[10,12,7,11],[11,15,10,14],[14,16,12,13]]}
 ```
 
+**candle**
+```chart
+{"type":"candle","title":"ACME","labels":["Mon","Tue","Wed","Thu","Fri"],"candles":[{"open":10,"high":14,"low":8,"close":12},{"open":12,"high":13,"low":9,"close":10},{"open":10,"high":12,"low":7,"close":11},{"open":11,"high":15,"low":10,"close":14},{"open":14,"high":16,"low":12,"close":13}],"height":12}
+```
+
+**ohlc**
+```chart
+{"type":"ohlc","title":"ACME","labels":["Mon","Tue","Wed"],"values":[[10,14,8,12],[12,13,9,10],[10,12,7,11]]}
+```
+
+**scatter**
+```chart
+{"type":"scatter","title":"Deals","points":[[1,2],[2,5],[3,3],[4,8],[5,6],[6,9]],"height":10}
+```
+
+**waterfall**
 ```chart
 {"type":"waterfall","title":"ARR movement","labels":["Start","New","Churn","Expansion"],"values":[120,45,-30,25]}
 ```
 
+**table**
 ```chart
 {"type":"table","title":"Accounts","columns":[{"label":"Account"},{"label":"ARR","type":"number"},{"label":"Share","type":"bar"},{"label":"Trend","type":"heat"}],"rows":[["Globex",4200,42,3],["Initech",3100,31,7],["Umbrella",2900,29,5],["Soylent",880,9,2]]}
 ```
 
+**heatmap**
 ```chart
 {"type":"heatmap","title":"Ops by hour","headers":["9am","12pm","3pm","6pm"],"cellWidth":4,"rows":[{"label":"Mon","values":[1,4,6,2]},{"label":"Tue","values":[2,6,7,3]},{"label":"Wed","values":[1,3,5,2]}]}
 ```
 
+**gauge**
 ```chart
 {"type":"gauge","title":"Coverage","value":62,"max":100}
 ```
 
+**progress**
+```chart
+{"type":"progress","title":"Sprint","label":"Done","value":0.4,"max":1}
+```
+
+**radar**
 ```chart
 {"type":"radar","title":"Service health","labels":["Speed","Cost","Risk","Reach","Quality"],"series":[{"name":"Now","values":[4,3,4,5,4]},{"name":"Target","values":[5,4,2,4,5]}],"max":5}
 ```
 
+**treemap**
 ```chart
 {"type":"treemap","title":"Spend by team","height":14,"items":[{"label":"Platform","children":[{"label":"API","value":19},{"label":"ETL","value":15},{"label":"Web","value":12}]},{"label":"Ops","children":[{"label":"SRE","value":12},{"label":"Support","value":6}]}]}
 ```
 
+**sankey**
 ```chart
 {"type":"sankey","title":"Signup flow","height":14,"nodes":[{"id":"s","label":"Sources"},{"id":"q","label":"Search"},{"id":"so","label":"Social"},{"id":"e","label":"Email"},{"id":"t","label":"Trial"}],"links":[{"from":"s","to":"q","value":14},{"from":"s","to":"so","value":10},{"from":"s","to":"e","value":4},{"from":"q","to":"t","value":14},{"from":"so","to":"t","value":7},{"from":"e","to":"t","value":3}]}
 ```
 
+**kanban**
 ```chart
 {"type":"kanban","title":"Sprint","height":14,"columns":[{"title":"Todo","cards":[{"title":"Ship the sankey","meta":"@ana"}]},{"title":"Doing","cards":[{"title":"Radar labels","meta":"@rui"}]},{"title":"Done","cards":[{"title":"Waterfall","meta":"@ana"}]}]}
 ```
 
+**gantt**
 ```chart
 {"type":"gantt","title":"Rollout plan","height":11,"today":"2026-11-14","tasks":[{"label":"Design","group":"Discovery","start":"2026-11-02","end":"2026-11-13"},{"label":"Stakeholder sign-off","group":"Discovery","start":"2026-11-13","end":"2026-11-17"},{"label":"Build","group":"Delivery","start":"2026-11-16","end":"2026-12-04"},{"label":"Test","group":"Delivery","start":"2026-11-30","end":"2026-12-11"},{"label":"Launch","group":"Delivery","at":"2026-12-14","milestone":true}]}
 ```
@@ -126,8 +182,8 @@ A `gantt` task takes `label` plus `start` and `end` (numbers, or ISO dates like 
 |---|---|
 | `theme` | `dark` (default) or `light`; without it the terminal's own theme is used |
 | `palette` | array of hex colours, one per series |
-| `mosaic` | `sextant` (default, Unicode 13), `octant` (Unicode 16, sharpest), `quadrant` (widest font support) |
-| `cellAspect` | how much taller a cell is than wide, for the round families; `2` by default — a font that draws the pie taller than wide wants about `2.3` |
+| `mosaic` | `sextant` (default, Unicode 13), `octant` (Unicode 16, sharpest), `quadrant` (widest font support); an unknown name falls back to sextant |
+| `cellAspect` | how much taller a cell is than wide, for the round families; measured from the terminal, `2` when it cannot be — a font that draws the pie taller than wide wants about `2.3` |
 | `zero: false` | line, scatter, candle: fit the axis to the data instead of anchoring it at zero |
 | `normalized` | bar and area: every stack becomes 100% |
 | `showPercent: false` | hide the share next to a single-series value |
@@ -139,12 +195,13 @@ A `gantt` task takes `label` plus `start` and `end` (numbers, or ISO dates like 
 | `up` / `down` | candle: override the two directions |
 | `low` / `high` | heat map: override the ramp ends |
 
-Renamed keys still draw and are reported in the footer: `percent` → `showPercent`, `gap` → `boundaryColor`, a heat map's `columns` → `headers`.
+Renamed keys still draw and are reported in the footer: `percent` → `showPercent`, a string `gap` → `boundaryColor`, a heat map's `columns` → `headers`. A numeric `gap` is not a colour: it is the blank space a kanban puts between columns, and it keeps that meaning. The rest of the aliases are listed in `schema/chart.schema.json`.
 
 ## When a chart looks wrong
 
 - Cut off on the right: the fence named a `width` wider than the pane, or the family is not in the 110-column grid cap list.
 - All bars the same height: the values are strings, or a `series` was passed where `values` belongs; the footer says so.
-- A pie with one slice: negative or zero values were dropped.
+- A pie with one slice: negative or zero values were dropped; the footer says how many.
 - Missing octant glyphs: the font lacks Unicode 16; the default is `sextant`, so only an explicit `"mosaic": "octant"` needs this.
 - A pie that reads taller than wide: the cell ratio is off; set `"cellAspect"` (about `2.3` for many terminal fonts).
+- `chart: <reason>` above the source: the body could not be parsed or the renderer failed. Nothing was drawn, and the reason is the first line.

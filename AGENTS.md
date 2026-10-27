@@ -1,27 +1,42 @@
 # Working notes for whoever picks this up next
 
-This file is for the *next agent* (or the next me): what this repo is, how to
-change it without breaking it, and the traps that cost hours the first time.
-Written after building the first 23 families, so it is all learned the hard way.
+This file is for the *next agent* (or the next me): how to change this repo
+without breaking it, and the traps that cost hours the first time.
 
-Read `README.md` for what the library *is*. Read this before editing it.
+## Start here
+
+Read [`docs/HANDOFF.md`](docs/HANDOFF.md) before anything else. It holds the
+current state, the gate numbers, the five seams, the plugin load path and the
+open limits. Then:
+
+- **Update `docs/HANDOFF.md` at every milestone or direction change**, not at
+  "session end". Current state, next actions, blockers. Write it for a session
+  with zero memory: pointers to paths and commands, not copied content.
+- **Decisions go in `docs/adr/`**, with a pointer from the handoff. The three
+  accepted ones are the value contract (0001), the corpus and run goldens
+  (0002) and the row ledger (0003).
+- `README.md` says what the library is. `GLOSSARY.md` fixes the words. Read this
+  file before editing, and keep the traps below.
 
 ---
 
 ## 1. The shape of the thing
 
 ```
-tui.js              the OpenCode plugin: reads a ```chart fence, parses it,
-                    picks a theme, turns runs into OpenTUI text chunks
-src/chart.js        the dispatcher + the tolerant fence parser + the note footer
+tui.js              the OpenCode plugin half: the custom ChartRenderable
+index.js            the server half: a default { id, setup } definition
+src/chart.js        dispatcher, tolerant fence parser, note footer
+src/values.js       one value fate per family (ADR-0001)
+src/layout.js       row ledger, width measurement, clipping (ADR-0003)
+src/text.js         grapheme display width, slice, pad, wrap
 src/core.js         cells, runs, the sub-cell sampler, wrapping, colour mixes
 src/theme.js        dark/light palettes, muted tones, styleOf(run) -> colours
 src/mosaic.js       quadrant / sextant / octant glyph tables
 src/axis.js         nice bounds, the box-model axis, label rows
-src/<family>.js     one module per chart family (23 of them)
-test/*.test.js      one suite per family plus core/parse/theme/chart
-scripts/            dump.mjs (plain-text renders), images.mjs (SVG gallery),
-                    samples.mjs (one canonical fence per family), accuracy.mjs
+src/<family>.js     one module per chart family (23 registered types)
+test/*.test.js      one suite per family plus core/parse/theme/chart/layout/values/schema
+scripts/corpus.mjs  SAMPLES + VARIANTS + EDGE_SPECS: read by every gate
+scripts/            audit, fidelity, golden, perf, schema, dump, images, gallery
 ```
 
 Two rules hold the design together. Break either and the repo gets worse:
@@ -29,25 +44,32 @@ Two rules hold the design together. Break either and the repo gets worse:
 1. **Every family renders from a grid of cells.** `renderChartRows(spec)`
    returns `[{ width, runs }]` where a run is `{ text, slice, kind, color? }`.
    `renderChart(spec)` is the same layout as text. Never compute geometry twice.
-2. **A run's colour comes from its `kind`.** `style.js`/`theme.js` decide every
-   colour, so the library never hardcodes a theme. A new kind needs a branch in
-   `styleOf` *and* in the plugin's expectations, or it silently falls through.
+2. **A run's colour comes from its `kind`.** `theme.js` decides every colour, so
+   the library never hardcodes a theme anywhere else. A new kind needs a branch
+   in `styleOf` and in the plugin's expectations, or it silently falls through.
 
 ## 2. The commands that matter
 
+Full list and what each gate proves: `docs/HANDOFF.md` §2.
+
 ```sh
-npm test                    # 173 checks across 16 suites, the gate for everything
+npm test                    # 503 checks in 26/26 suites, the gate for everything
 node test/gantt.test.js     # one suite, prints "N/N checks passed"
+npm run audit               # 58/58: width, bounds, data accounting, no crash
+npm run fidelity            # 45/45: geometry against a formula
+npm run golden              # 954 text + 34 run frames; --update only after review
+npm run perf                # 27/27 on large inputs
+npm run accuracy            # pie rim: 628.3 ideal, <=0.5% error
+crapper src                 # 0 functions at CRAP >= 10 (worst 9.4)
 node scripts/dump.mjs 58    # every family as plain text -> review/renders.txt
 node scripts/images.mjs 76  # every family as SVG            -> assets/*.svg
-npm run accuracy            # sub-cell fidelity of the pie rim (0.0% octant)
 ```
 
 `review/renders.txt` is how you *look* at a change without a terminal.
 `assets/*.svg` is how a human looks at it. Regenerate both when a family's
 output changes, or the README gallery starts lying.
 
-## 3. Adding a family (the recipe that worked, eight times)
+## 3. Adding a family (the recipe that worked, 23 times)
 
 1. **Normalize the input in its own exported function** (`normalizeTasks`,
    `normalizeCandles`, `normalizeTree`). Drop rows that cannot be drawn instead
@@ -60,9 +82,9 @@ output changes, or the README gallery starts lying.
 5. **Only use run kinds that exist:** `fill, edge, line, label, cell, title,
    axis, grid, track, target, legend, legend-mark, spoke, series, outside`.
    Check `styleOf` before inventing one.
-6. **Register it** in `CHART_TYPES` (`src/chart.js`) and add an entry to
-   `SAMPLES` (`scripts/samples.mjs`) — the dump, the images and the README
-   gallery all read that map, so a family without a sample is invisible.
+6. **Register it** in `CHART_TYPES` (`src/chart.js`) and add a sample to
+   `SAMPLES` (`scripts/corpus.mjs`). Every gate, the dump, the images and the
+   README gallery read that map, so a family without a sample is invisible.
 7. **Add a spec to the smoke test's `specs` map** in `test/chart.test.js`, or the
    suite crashes with `Cannot read properties of undefined (reading 'width')`.
 8. **Write the suite** with property checks, not snapshots. The ones that
@@ -76,7 +98,8 @@ output changes, or the README gallery starts lying.
    picture. Every visual defect found so far — chunky rims, bowed radar sides,
    flat treemaps, hidden drop-off — was invisible in the test suite.
 10. **Update** `README.md` (intro count, gallery grid, family table, the
-    `<details>` fence block) and `skills/opencode-charts/SKILL.md`.
+    `<details>` fence block) and `skills/opencode-charts/SKILL.md` (add the
+    family and one fence), then regenerate the gallery.
 
 ## 4. Traps, with the symptom that finds them
 
@@ -84,6 +107,12 @@ output changes, or the README gallery starts lying.
 circle drawn without correcting for it is a tall ellipse: the radius used
 vertically is half the horizontal one (`radiusY = radiusX / 2`). A "round" test
 compares drawn width against height.
+
+**The axis runs through the middle of a row.** A full block on the zero row hangs
+half a cell below the line, which reads as "the bar starts under zero". A bar
+that rises owns the upper half of the baseline cell, one that falls owns the
+lower half, and a bar crossing zero keeps a full block. `bar` and `histogram` do
+this; `waterfall` still does not.
 
 **A width check cannot see a missing glyph.** `captureSpans()` proves one cell
 per glyph, not that the font draws it. Octants are Unicode 16 (2024); sextants
@@ -99,7 +128,8 @@ smaller than one row. Merge instead (`cells[y][x] ?? axisGlyph`).
 
 **Labels must use the same centring as their marks.** If bars are centred with a
 `leftPad`, `categoryRow` needs `slotOffset` and `pointLabelRow` needs explicit
-positions. The failure mode looks like "the labels are just wrong".
+positions. The failure mode looks like "the labels are just wrong". Marks start
+at the axis now; do not reintroduce centring a capped layout.
 
 **Squarify lays a strip along the shorter side.** In a wide box that means
 columns, never rows. `squarify(items, w, h, true)` forces bands along the width,
@@ -111,16 +141,11 @@ register *before* the built-ins, so claiming `mermaid` **disables** OpenCode's
 own diagram renderer instead of extending it. That is why this library keeps its
 own `chart` fence.
 
-**OpenTUI specifics that bit, in order of annoyance:**
-- Text renderables do not measure themselves in the first layout pass. Give every
-  row an explicit `width`/`height: 1`/`wrapMode: "none"`/`flexShrink: 0`.
-- Passing `borderColor` or `borderStyle` flips `_border` **on**; omit them when no
-  border is wanted.
-- `StyledText` needs real chunks. A bare string in the chunk array throws
-  `Packing non-optional field 'text' at index N but value is undefined`.
-  Build one with `{ __isChunk: true, text, attributes: 0 }` then `bg`/`fg`/`bold`.
-- A local plugin entry in `cli.json` must be a **directory** with a `tui.js`;
-  a bare path to a file is ignored silently.
+**OpenTUI specifics that bit, in order of annoyance:** see `docs/HANDOFF.md` §4.
+The short version: a text renderable does not measure itself in the first layout
+pass; passing `borderColor`/`borderStyle` flips a border **on**; `StyledText`
+needs real chunks (a bare string throws `Packing non-optional field 'text'`);
+a local `cli.json` entry must be a **directory** with a `tui.js`.
 
 **Measure in code points, never UTF-16 units.** `text.length`, `str[i]` and
 `.slice()` break every astral mosaic glyph. Use `[...text]` and `cols()`.
@@ -140,18 +165,15 @@ The probe imports the real plugin, stubs
 `@opentui/core/testing` and reports `width mismatches` per frame. Any change to
 `tui.js` deserves that run before you claim it works.
 
-**The installed plugin is a cached copy, not this checkout.** OpenCode installs
-`acastro2/opencode-chart-tui` from GitHub into
-`~/.cache/opencode/npm/git-opencode-chart-tui-*/`. It loads the server half from
-the package root (`index.js`: a default definition with an id and a `setup`
-function) and the TUI half from the `./tui` export — a package whose root is not
-a plugin definition fails with `Plugin must export a default definition`. Editing
-this checkout changes nothing until you push and run `opencode plugin update`.
-That update re-clones, but `plugin add` alone reuses the cache, so delete
-`~/.cache/opencode/npm/git-opencode-chart-tui-*` to force a clean install. For a
-live loop use a discovery symlink under `~/.config/opencode/plugins/` instead:
-`src/*.js` edits appear at the next render; a change to `tui.js` needs the TUI
-restarted.
+**The installed plugin is a cached copy, not this checkout.** OpenCode clones
+`acastro2/opencode-chart-tui` into `~/.cache/opencode/npm/git-opencode-chart-tui-*/`.
+It loads `index.js` from the package root and `tui.js` through the `./tui`
+export — a package whose root is not a plugin definition fails with
+`Plugin must export a default definition`. Editing this checkout changes nothing
+until you push and run `opencode plugin update`; `plugin add` alone reuses the
+cache, so delete the cache directory to force a clean install. For a live loop
+use a discovery symlink under `~/.config/opencode/plugins/`, never a symlink from
+the cache: a plugin update writes through it into this repo.
 
 **Releases.** Tag a pushed commit (`git tag -a vX.Y.Z -m "…"` then
 `git push origin vX.Y.Z`) and `gh release create vX.Y.Z`. Installers pin with
@@ -164,9 +186,12 @@ personal account: `gh auth switch -u acastro2` before, back to
 
 - `npm test` green, and the new behaviour covered by a check that fails without
   the fix.
+- `npm run audit`, `fidelity`, `golden` and `perf` green together, not one at a
+  time: a change can pass the suite and still move a picture.
 - The plain-text dump regenerated and read.
 - The SVG regenerated and *looked at* as a PNG for anything shape-related.
-- The private probe run for plugin or library changes, with `width mismatches 0`.
+- The private probe run for plugin or library changes, with `width mismatches 0`
+  (it skips on Node 24 — say so rather than claiming a live frame).
 - What you could not verify is stated as such. Never describe a picture you have
   not seen; say "the colours are right in the data, I have not looked at a light
   terminal" instead.
@@ -180,26 +205,29 @@ wrong claim, and the most valuable finding of all: the test suite's blind spot.
 | question | file |
 |---|---|
 | what it is, how to install, the family table | `README.md` |
+| current state, gates, seams, plugin load path, limits | `docs/HANDOFF.md` |
 | the fence contract, one example per family | `skills/opencode-charts/SKILL.md` |
-| every key, described, with examples | `schema/chart.schema.json` |
+| every key, described, checked against the source | `schema/chart.schema.json` |
 | what the output looks like right now | `review/renders.txt` |
 | how the drawing works, with pictures | `review/anatomy.html` |
-| the OpenTUI and OpenCode plugin facts | `REFERENCES.md` |
-| the original brief | `SPEC.md` |
+| the words, and the decisions | `GLOSSARY.md`, `docs/adr/` |
 
 ## 7. Open threads
 
+- **`hbar` at `width: 16` emits rows wider than the chart** (pre-existing; the
+  TUI clips it, the library does not). Fix the width rule, then add the case to
+  the audit corpus.
+- **`waterfall` still paints a full block over its zero row**, so it disagrees
+  with the baseline rule `bar` now follows.
 - **No dependency arrows on the gantt.** Mermaid's gantt has none either; a
   terminal elbow connector would add noise. Wanted only if a user asks.
-- **Width is measured once per render.** A resize does not re-render, and the
-  fence's own `width` wins over the pane.
 - **The light theme has never been seen by eye**, only verified in the data and
-  in the probe's frames.
+  in the SVG gallery.
 - **Octant fonts are unverified beyond one machine.** The safe default is
   sextant; consider detecting support instead of guessing.
 - **Mermaid's other families** (gitgraph, timeline, mindmap, quadrant,
   requirements, C4, packet, block, architecture) need an upstream change in
   OpenCode, not a plugin — see the limits section of the README.
-- **`scripts/dump.mjs` and `images.mjs` share `samples.mjs`.** Keep it canonical:
-  if a family's sample changes, both the pictures and the renders change with it,
+- **`dump.mjs` and `images.mjs` read `corpus.mjs`.** Keep it canonical: if a
+  family's sample changes, both the pictures and the renders change with it,
   which is the point.

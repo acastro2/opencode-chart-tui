@@ -2,7 +2,7 @@
 
 **23 chart families, drawn inside the OpenCode terminal from a fenced code block.**
 
-You type a ```chart fence with a JSON body; the plugin draws it in place — pie, donut, bar, line, area, scatter, histogram, candlestick, waterfall, heat map, gauge, radar, treemap, sankey, kanban — in colour, at sub-cell resolution, on your terminal's own theme.
+You type a ```chart fence with a JSON body; the plugin draws it in place — pie, donut, bar, line, area, scatter, histogram, candlestick, waterfall, heat map, gauge, radar, treemap, sankey, kanban, table, gantt — in colour, at sub-cell resolution, on your terminal's own theme.
 
 Nothing is rendered as an image: every family paints a grid of cells, so the geometry is testable without a terminal and the picture fits any pane.
 
@@ -108,7 +108,7 @@ text here. Paste one into OpenCode and it renders.
 **`heatmap`**
 
 ```chart
-{"type":"heatmap","title":"Ops by hour","columns":["9am","12pm","3pm","6pm"],"rows":[{"label":"Mon","values":[1,4,6,2]},{"label":"Tue","values":[2,6,7,3]},{"label":"Wed","values":[1,3,5,2]}],"cellWidth":4}
+{"type":"heatmap","title":"Ops by hour","headers":["9am","12pm","3pm","6pm"],"rows":[{"label":"Mon","values":[1,4,6,2]},{"label":"Tue","values":[2,6,7,3]},{"label":"Wed","values":[1,3,5,2]}],"cellWidth":4}
 ```
 
 **`gauge`**
@@ -281,23 +281,43 @@ renderChartRows({ type: "bar", labels: ["a", "b"], values: [3, 5] });  // rows o
 
 | | |
 |---|---|
-| `core.js` | cells, runs, the sub-cell sampler, legends, perceptual colour mixes, wrapping |
+| `chart.js` | dispatcher, tolerant fence parser, note footer |
+| `values.js` | one value fate per family (`zero`, `hole`, `drop`); ADR-0001 |
+| `layout.js` | the row ledger (`height` is total, `plotHeight` is the plot), width measurement and clipping; ADR-0003 |
+| `text.js` | grapheme-aware display width, slice, pad, wrap |
+| `core.js` | cells, runs, the sub-cell sampler, legends, perceptual colour mixes |
 | `theme.js` | dark and light palettes, muted tones, `styleOf(run)` → colours and background |
 | `mosaic.js` | quadrant, sextant and octant glyph tables, generated from UnicodeData.txt |
 | `axis.js` | nice bounds, the box-model axis, tick rows, label rows |
-| `pie.js` `bar.js` `line.js` `heatmap.js` `gauge.js` `histogram.js` `candle.js` `waterfall.js` `table.js` `radar.js` `treemap.js` `sankey.js` `kanban.js` | the families |
-| `chart.js` | dispatcher, tolerant fence parser, note footer |
+| `pie.js` `bar.js` `line.js` `heatmap.js` `gauge.js` `histogram.js` `candle.js` `ohlc.js` `waterfall.js` `table.js` `radar.js` `treemap.js` `sankey.js` `kanban.js` `gantt.js` | the families |
+
+Every gate reads one corpus, `scripts/corpus.mjs`, so a spec added there reaches
+all of them at once. `npm run golden:update` is only for a frame you have looked
+at; see [`docs/HANDOFF.md`](docs/HANDOFF.md) for the rules.
+
+| gate | what it proves | result |
+|---|---|---|
+| `npm test` | family behaviour, parser, core, theme | 503 checks, 26 suites |
+| `npm run audit` | width, bounds, data accounting, no crash | 58 cases |
+| `npm run fidelity` | shape math against a formula | 45 checks |
+| `npm run golden` | pictures, text and styled runs | 954 text + 34 run frames |
+| `npm run perf` | large inputs stay bounded | 27 specs |
+| `npm run accuracy` | pie area and rim | 628.3 ideal, ≤ 0.5% error |
 
 ```sh
-npm test          # 173 checks across 16 suites
-npm run accuracy  # the pie rim against the analytic ellipse
-node scripts/dump.mjs 58     # every family as plain text → review/renders.txt
-node scripts/images.mjs 76   # every family as an SVG → assets/
+npm test                        # every suite
+npm run audit                   # corpus invariants
+npm run fidelity                # geometry against an independent reference
+npm run golden                  # picture lock; --update only after review
+npm run perf                    # large-input timing
+npm run accuracy                # pie rim against the analytic ellipse
+node scripts/dump.mjs 58        # every family as plain text → review/renders.txt
+node scripts/images.mjs 76      # every family as an SVG → assets/
 ```
 
 ## The plugin
 
-`tui.js` registers a code-block renderer for the `chart` language with OpenCode's CLI plugin API, parses the fence with the library, picks the theme (the fence's own, or the terminal's), turns each run into a styled chunk and each row into a `TextRenderable`. Grid-like families stop at 110 columns and everything else at 160, because a treemap stretched across a very wide pane reads as flat stripes; a fence that names a `width` gets exactly that.
+`tui.js` registers a code-block renderer for the `chart` language with OpenCode's CLI plugin API, parses the fence with the library, picks the theme (the fence's own, or the terminal's), and draws the whole block with one custom renderable: it measures its own cells and writes each styled run straight into the buffer. Grid-like families stop at 110 columns and everything else at 160, because a treemap stretched across a very wide pane reads as flat stripes; a fence that names a `width` gets that width, clipped to the pane. A render failure becomes a single `chart: <reason>` row instead of an exception.
 
 ## The skill
 
@@ -311,9 +331,16 @@ It carries the fence contract, one example per family, the option names and the 
 
 ## Notes
 
-- [`REFERENCES.md`](REFERENCES.md) — what I learned building renderers on OpenTUI: custom renderables, the testing harness, the exclusive markdown registry, the traps.
-- [`review/anatomy.html`](review/anatomy.html) — a page that opens in a browser: the aspect correction, the octant bit layout, the sub-cell sampler with its three modes, and the renders annotated.
-- [`SPEC.md`](SPEC.md) — the fence specification the library implements.
+- [`docs/HANDOFF.md`](docs/HANDOFF.md) — the state a fresh session needs: gates,
+  the seams, the plugin load path, and the open limits.
+- [`GLOSSARY.md`](GLOSSARY.md) — the words this repo uses for its own ideas.
+- [`docs/adr/`](docs/adr/) — the decisions that shaped the value contract, the
+  corpus and the row ledger.
+- [`review/anatomy.html`](review/anatomy.html) — a page that opens in a browser:
+  the aspect correction, the octant bit layout, the sub-cell sampler with its
+  three modes, and the renders annotated.
+- [`schema/chart.schema.json`](schema/chart.schema.json) — every key, described,
+  checked against the keys the source actually reads.
 
 ## Limits
 
