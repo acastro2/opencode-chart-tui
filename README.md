@@ -198,8 +198,12 @@ install separately, because installing a plugin does not write into your skills
 directory:
 
 ```sh
-npx skills add acastro2/opencode-chart-tui -s opencode-charts -g -a opencode
+npx skills add acastro2/opencode-chart-tui -s opencode-charts -g -a opencode -y
 ```
+
+`-y` skips the confirmation prompt. If `~/.agents/skills/opencode-charts` already
+exists — for example a symlink from `npm run skill:install` — remove it first:
+the installer copies, so pointing it at a symlink can write into that checkout.
 
 That is the one-liner. From a checkout you can instead run
 `npm run skill:install`, which links `skills/opencode-charts` into
@@ -341,7 +345,7 @@ node scripts/images.mjs 76      # every family as an SVG → assets/
 The same knowledge ships as an agent skill, so a model writes the fence for you:
 
 ```sh
-npx skills add acastro2/opencode-chart-tui -s opencode-charts -g -a opencode
+npx skills add acastro2/opencode-chart-tui -s opencode-charts -g -a opencode -y
 ```
 
 It carries the fence contract, one example per family, the option names and the schema path. Trigger it by asking for a chart in chat.

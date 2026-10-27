@@ -82,7 +82,7 @@ sample, variant. See `GLOSSARY.md`.
 and owns one `ChartRenderable`.
 
 - **The skill is a second install.** The plugin draws the fence; `skills/opencode-charts`
-  is what makes an agent reach for one. `npx skills add acastro2/opencode-chart-tui -s opencode-charts -g -a opencode` is the one-liner; `npm run skill:install` links a
+  is what makes an agent reach for one. `npx skills add acastro2/opencode-chart-tui -s opencode-charts -g -a opencode -y` is the one-liner; `npm run skill:install` links a
   checkout into `~/.agents/skills` so edits stay live. The frontmatter must stay
   valid strict YAML (quote the description if it contains `: `) or the `skills`
   CLI rejects it. Skills load at session start, so a new or changed skill needs a

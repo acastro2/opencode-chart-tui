@@ -214,7 +214,7 @@ Renamed keys still draw and are reported in the footer: `percent` → `showPerce
 Two installs are needed, and they are independent:
 
 ```sh
-npx skills add acastro2/opencode-chart-tui -s opencode-charts -g -a opencode
+npx skills add acastro2/opencode-chart-tui -s opencode-charts -g -a opencode -y
 opencode plugin add acastro2/opencode-chart-tui
 ```
 
