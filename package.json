@@ -1,6 +1,6 @@
 {
   "name": "opencode-charts",
-  "version": "0.2.3",
+  "version": "0.2.4",
   "type": "module",
   "description": "Terminal chart rendering for the OpenCode TUI: 23 families from a JSON fence, dependency-free ES modules",
   "main": "./index.js",
