@@ -188,7 +188,7 @@ automatically. Restart the TUI once (plugins load at startup), and refresh later
 with `opencode plugin update`.
 
 Want a fixed release instead of the moving branch? Append a tag:
-`opencode plugin add acastro2/opencode-chart-tui#v0.2.2` — releases are listed on
+`opencode plugin add acastro2/opencode-chart-tui#v0.2.3` — releases are listed on
 the [releases page](https://github.com/acastro2/opencode-chart-tui/releases).
 
 ### Teach your agent to use it
