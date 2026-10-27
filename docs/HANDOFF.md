@@ -81,6 +81,12 @@ sample, variant. See `GLOSSARY.md`.
 `package.json` exports `tui.js`, which registers the `chart` code-block renderer
 and owns one `ChartRenderable`.
 
+- **The skill is a second install.** The plugin draws the fence; `skills/opencode-charts`
+  is what makes an agent reach for one. `npm run skill:install` links it into
+  `~/.agents/skills` (and the OpenCode skills directory when present). Skills load
+  at session start, so a new or changed skill needs a restart. `package.json`
+  `files` now ships `skills/` and `schema/`, so a plugin install carries them too.
+
 - **The installed plugin is a cached copy.** OpenCode clones the GitHub repo into
   `~/.cache/opencode/npm/git-opencode-chart-tui-*/`. Editing this checkout does
   nothing until you push and run `opencode plugin update`; `plugin add` alone

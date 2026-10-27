@@ -188,8 +188,25 @@ automatically. Restart the TUI once (plugins load at startup), and refresh later
 with `opencode plugin update`.
 
 Want a fixed release instead of the moving branch? Append a tag:
-`opencode plugin add acastro2/opencode-chart-tui#v0.2.0` — releases are listed on
+`opencode plugin add acastro2/opencode-chart-tui#v0.2.1` — releases are listed on
 the [releases page](https://github.com/acastro2/opencode-chart-tui/releases).
+
+### Teach your agent to use it
+
+The plugin draws a fence; the skill is what makes an agent reach for one. They
+install separately, because installing a plugin does not write into your skills
+directory:
+
+```sh
+git clone https://github.com/acastro2/opencode-chart-tui
+cd opencode-chart-tui && npm run skill:install
+```
+
+That links `skills/opencode-charts` into `~/.agents/skills` (and the OpenCode
+skills directory when it exists), so edits to `SKILL.md` apply at the next
+session. From a plugin-only install, copy the same directory out of the package
+(`…/opencode-charts/skills/opencode-charts`) into `~/.agents/skills/`. Restart
+the agent afterwards; skills load at session start.
 
 <details>
 <summary><b>Other ways to load it, if you need them</b></summary>

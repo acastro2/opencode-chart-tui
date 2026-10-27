@@ -9,6 +9,8 @@ A chart is a fenced block whose language is `chart` and whose body is a JSON obj
 
 This skill ships with [opencode-chart-tui](https://github.com/acastro2/opencode-chart-tui): the plugin draws the charts, `src/` holds the renderer, `schema/chart.schema.json` describes every key, `review/renders.txt` has every family as plain text, and `docs/HANDOFF.md` explains the internals. The repo's README gallery shows each family as a picture next to the fence that drew it.
 
+If a fence shows as **raw JSON** instead of a drawing, the plugin is not loaded in this session — install it and restart the agent. If it shows `chart: <reason>`, the plugin is there and the fence body is what failed.
+
 ## Use them like diagrams
 
 A chart in a reply is communication, not decoration. The same way a Mermaid block replaces three paragraphs about a flow, a chart replaces a list of numbers with the shape of the numbers. Draw one without being asked when you would otherwise write "X rose from A to B", "most of it is Y", "Z is the biggest", "we are behind target", or a bare column of figures.
@@ -199,9 +201,21 @@ Renamed keys still draw and are reported in the footer: `percent` → `showPerce
 
 ## When a chart looks wrong
 
+- The fence shows as raw JSON: the plugin is not loaded. Install `acastro2/opencode-chart-tui` and restart the agent; a fence drawn before the install stays raw until the session reloads.
 - Cut off on the right: the fence named a `width` wider than the pane, or the family is not in the 110-column grid cap list.
 - All bars the same height: the values are strings, or a `series` was passed where `values` belongs; the footer says so.
 - A pie with one slice: negative or zero values were dropped; the footer says how many.
 - Missing octant glyphs: the font lacks Unicode 16; the default is `sextant`, so only an explicit `"mosaic": "octant"` needs this.
 - A pie that reads taller than wide: the cell ratio is off; set `"cellAspect"` (about `2.3` for many terminal fonts).
 - `chart: <reason>` above the source: the body could not be parsed or the renderer failed. Nothing was drawn, and the reason is the first line.
+
+## Setup, for the human
+
+Two installs are needed, and they are independent:
+
+```sh
+opencode plugin add acastro2/opencode-chart-tui   # draws the fence
+npm run skill:install                            # makes agents reach for it
+```
+
+`skill:install` links this directory into `~/.agents/skills` (and the OpenCode skills directory when it exists), so edits here apply at the next session. From a plugin install with no checkout, copy `skills/opencode-charts` out of the installed package into `~/.agents/skills/`. Skills load at session start; restart after installing.
