@@ -52,6 +52,8 @@ Gates, measured on this tree (2026-10-27, Node 24.22.1):
 | complexity | `crapper src` | 0 functions at CRAP ≥ 10 (worst 9.6, `normalizeBoxes`) |
 | schema contract | `node scripts/schema.mjs --check` | 30 types, 76 keys, no drift |
 
+**Open PR:** [#1](https://github.com/acastro2/opencode-chart-tui/pull/1) — the seven families. Its "Known issues" section lists the review findings that are not fixed yet: combo zero-row order, slope after-value collisions, calendar dropped values, silent height truncation in bullet/dot/funnel, the bullet target tally, and the schema type default.
+
 ## 2. How to work
 
 ```sh
