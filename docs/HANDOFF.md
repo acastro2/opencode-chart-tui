@@ -52,7 +52,7 @@ Gates, measured on this tree (2026-10-27, Node 24.22.1):
 | complexity | `crapper src` | 0 functions at CRAP ≥ 10 (worst 9.6, `normalizeBoxes`) |
 | schema contract | `node scripts/schema.mjs --check` | 30 types, 76 keys, no drift |
 
-**Open PR:** [#1](https://github.com/acastro2/opencode-chart-tui/pull/1) — the seven families. Its "Known issues" section lists the review findings that are not fixed yet: combo zero-row order, slope after-value collisions, calendar dropped values, silent height truncation in bullet/dot/funnel, the bullet target tally, and the schema type default.
+**Released:** [v0.3.0](https://github.com/acastro2/opencode-chart-tui/releases/tag/v0.3.0) — the seven families. The release notes list the known follow-ups: combo zero-row order, slope after-value collisions, calendar dropped values, silent height truncation in bullet/dot/funnel, the bullet target tally, and the schema type default.
 
 ## 2. How to work
 
@@ -119,11 +119,9 @@ and owns one `ChartRenderable`.
   checkout. `src/*.js` edits appear at the next render; a `tui.js` edit needs the
   TUI restarted. Never point the cache at the checkout — a plugin update writes
   into it.
-  **This machine is currently in that state:** the cache entry
-  `~/.cache/opencode/npm/git-opencode-chart-tui-*/…/node_modules/opencode-charts`
-  is a symlink to this checkout, with the original saved beside it as
-  `opencode-charts.bak`. Restore it before `opencode plugin update` or a release:
-  `rm opencode-charts && mv opencode-charts.bak opencode-charts`.
+  A cache entry symlinked to a checkout is a test setup, not an install: restore
+  it before `opencode plugin update` or a release (`rm opencode-charts && mv
+  opencode-charts.bak opencode-charts`), or the update writes into the checkout.
 - **Cell aspect** is measured from the renderer's pixel resolution and terminal
   size, so a disc is round without configuration. A fence `cellAspect` wins over
   the measurement; the measurement wins over the default of 2.
