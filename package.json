@@ -2,7 +2,7 @@
   "name": "opencode-charts",
   "version": "0.2.4",
   "type": "module",
-  "description": "Terminal chart rendering for the OpenCode TUI: 23 families from a JSON fence, dependency-free ES modules",
+  "description": "Terminal chart rendering for the OpenCode TUI: 30 families from a JSON fence, dependency-free ES modules",
   "main": "./index.js",
   "exports": {
     "./tui": "./tui.js",
@@ -26,7 +26,14 @@
     "./treemap": "./src/treemap.js",
     "./sankey": "./src/sankey.js",
     "./kanban": "./src/kanban.js",
-    "./gantt": "./src/gantt.js"
+    "./gantt": "./src/gantt.js",
+    "./box": "./src/box.js",
+    "./funnel": "./src/funnel.js",
+    "./calendar": "./src/calendar.js",
+    "./bullet": "./src/bullet.js",
+    "./slope": "./src/slope.js",
+    "./dot": "./src/dot.js",
+    "./combo": "./src/combo.js"
   },
   "scripts": {
     "test": "node test/run.js",

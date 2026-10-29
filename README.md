@@ -1,8 +1,8 @@
 # opencode-chart-tui
 
-**23 chart families, drawn inside the OpenCode terminal from a fenced code block.**
+**30 chart families, drawn inside the OpenCode terminal from a fenced code block.**
 
-You type a ```chart fence with a JSON body; the plugin draws it in place — pie, donut, bar, line, area, scatter, histogram, candlestick, waterfall, heat map, gauge, radar, treemap, sankey, kanban, table, gantt — in colour, at sub-cell resolution, on your terminal's own theme.
+You type a ```chart fence with a JSON body; the plugin draws it in place — pie, donut, bar, line, area, scatter, histogram, candlestick, waterfall, heat map, gauge, radar, treemap, sankey, kanban, table, gantt, box plot, funnel, calendar, bullet, slope, dot and combo — in colour, at sub-cell resolution, on your terminal's own theme.
 
 Nothing is rendered as an image: every family paints a grid of cells, so the geometry is testable without a terminal and the picture fits any pane.
 
@@ -28,7 +28,10 @@ text here. Paste one into OpenCode and it renders.
 | ![table](assets/table.svg) | ![radar](assets/radar.svg) |
 | ![treemap](assets/treemap.svg) | ![sankey](assets/sankey.svg) |
 | ![kanban](assets/kanban.svg) | ![candle](assets/candle.svg) |
-| ![gantt](assets/gantt.svg) |  |
+| ![gantt](assets/gantt.svg) | ![box](assets/box.svg) |
+| ![funnel](assets/funnel.svg) | ![calendar](assets/calendar.svg) |
+| ![bullet](assets/bullet.svg) | ![slope](assets/slope.svg) |
+| ![dot](assets/dot.svg) | ![combo](assets/combo.svg) |
 
 <details>
 <summary><b>Every fence, ready to paste</b></summary>
@@ -171,6 +174,48 @@ text here. Paste one into OpenCode and it renders.
 {"type":"gantt","title":"Rollout plan","height":11,"today":"2026-11-14","tasks":[{"label":"Design","group":"Discovery","start":"2026-11-02","end":"2026-11-13"},{"label":"Stakeholder sign-off","group":"Discovery","start":"2026-11-13","end":"2026-11-17"},{"label":"Build","group":"Delivery","start":"2026-11-16","end":"2026-12-04"},{"label":"Test","group":"Delivery","start":"2026-11-30","end":"2026-12-11"},{"label":"Launch","group":"Delivery","at":"2026-12-14","milestone":true},{"label":"Hypercare","group":"Delivery","start":"2026-12-14","end":"2027-01-08"}]}
 ```
 
+**`box`**
+
+```chart
+{"type":"box","title":"Latency by service","labels":["API","ETL","Web"],"values":[[12,15,14,18,22,13,16,19,55],[20,24,22,26,30,21,23,28],[8,9,9,10,11,9,10,12,40]]}
+```
+
+**`funnel`**
+
+```chart
+{"type":"funnel","title":"Signup funnel","labels":["Visitors","Signups","Trials","Paid"],"values":[1000,420,180,64]}
+```
+
+**`calendar`**
+
+```chart
+{"type":"calendar","title":"Commits","dates":["2026-01-01","2026-01-02","2026-01-05","2026-01-06","2026-01-07","2026-01-08","2026-01-09","2026-01-12","2026-01-13","2026-01-14","2026-01-15","2026-01-16","2026-01-19","2026-01-20","2026-01-21","2026-01-22","2026-01-23","2026-01-26","2026-01-27","2026-01-28","2026-01-29"],"values":[3,5,2,6,1,7,4,2,8,3,5,1,0,6,4,3,7,2,5,3,9]}
+```
+
+**`bullet`**
+
+```chart
+{"type":"bullet","title":"Quarter targets","labels":["Revenue","Margin","NPS"],"values":[72,64,81],"targets":[100,80,75],"ranges":[[0,50],[50,80],[80,100]],"max":100}
+```
+
+**`slope`**
+
+```chart
+{"type":"slope","title":"Score change","labels":["Alpha","Beta","Gamma","Delta"],"series":[{"name":"Q1","values":[40,65,30,80]},{"name":"Q2","values":[55,60,45,72]}]}
+```
+
+**`dot`**
+
+```chart
+{"type":"dot","title":"Latency","labels":["api","etl","web","auth","search"],"values":[42,66,28,51,19]}
+```
+
+**`combo`**
+
+```chart
+{"type":"combo","title":"Revenue vs plan","labels":["Q1","Q2","Q3","Q4"],"series":[{"name":"Actual","type":"bar","values":[42,55,61,74]},{"name":"Plan","type":"line","values":[40,50,60,70]}]}
+```
+
 </details>
 
 ## Install
@@ -272,6 +317,13 @@ Press nothing, run nothing: the fence is replaced by the drawing as soon as it i
 | `sankey` | `nodes`, `links: [{from, to, value}]` | columns declared or layered from the links |
 | `kanban` | `columns: [{title, cards}]` or a flat `cards` list | `columnWidth`, `order` |
 | `gantt` | `tasks: [{label, start, end, group, milestone}]` | `start`/`end` take numbers or ISO dates, `at` is a milestone, `today` draws the line |
+| `box` | `labels`, `values`: one sample array per label | box plot: median, quartiles, whiskers and outliers on one shared scale |
+| `funnel` | `labels`, `values` | conversion is measured against the **first** stage, not the row above; `showPercent: false` hides it |
+| `calendar` | `dates` (ISO), `values` | one half block per day, weekday rows Monday-first, one column plus a gap per week; a month is narrow by nature, a quarter or half-year fills the width; `N weeks hidden` when the range is wider than the chart |
+| `bullet` | `labels`, `values`, `targets`, `max` | optional `ranges: [[lo, hi]]`, darkest first; the bar is the measure, the tick is the target |
+| `slope` | exactly two `series` (before, after), `labels` | a mark in the left and right column, a line between them; any other series count prints `no data` |
+| `dot` | `labels`, `values` | one row per category on a shared axis; `sort: true` ranks by value |
+| `combo` | `series: [{type: "bar" or "line", name, values}]` | one shared scale from zero; needs at least one bar and one line series |
 
 `bar` is an alias of `column`: both draw vertical bars. Use `hbar` for horizontal bars. The alias is deliberate; changing `bar` to horizontal would break existing fences.
 
@@ -310,7 +362,7 @@ renderChartRows({ type: "bar", labels: ["a", "b"], values: [3, 5] });  // rows o
 | `theme.js` | dark and light palettes, muted tones, `styleOf(run)` → colours and background |
 | `mosaic.js` | quadrant, sextant and octant glyph tables, generated from UnicodeData.txt |
 | `axis.js` | nice bounds, the box-model axis, tick rows, label rows |
-| `pie.js` `bar.js` `line.js` `heatmap.js` `gauge.js` `histogram.js` `candle.js` `ohlc.js` `waterfall.js` `table.js` `radar.js` `treemap.js` `sankey.js` `kanban.js` `gantt.js` | the families |
+| `pie.js` `bar.js` `line.js` `heatmap.js` `gauge.js` `histogram.js` `candle.js` `ohlc.js` `waterfall.js` `table.js` `radar.js` `treemap.js` `sankey.js` `kanban.js` `gantt.js` `box.js` `funnel.js` `calendar.js` `bullet.js` `slope.js` `dot.js` `combo.js` | the families |
 
 Every gate reads one corpus, `scripts/corpus.mjs`, so a spec added there reaches
 all of them at once. `npm run golden:update` is only for a frame you have looked
@@ -318,11 +370,11 @@ at; see [`docs/HANDOFF.md`](docs/HANDOFF.md) for the rules.
 
 | gate | what it proves | result |
 |---|---|---|
-| `npm test` | family behaviour, parser, core, theme | 503 checks, 26 suites |
-| `npm run audit` | width, bounds, data accounting, no crash | 58 cases |
+| `npm test` | family behaviour, parser, core, theme | 603 checks, 33 suites |
+| `npm run audit` | width, bounds, data accounting, no crash | 65 cases |
 | `npm run fidelity` | shape math against a formula | 45 checks |
-| `npm run golden` | pictures, text and styled runs | 954 text + 34 run frames |
-| `npm run perf` | large inputs stay bounded | 27 specs |
+| `npm run golden` | pictures, text and styled runs | 1164 text + 41 run frames |
+| `npm run perf` | large inputs stay bounded | 34 specs |
 | `npm run accuracy` | pie area and rim | 628.3 ideal, ≤ 0.5% error |
 
 ```sh

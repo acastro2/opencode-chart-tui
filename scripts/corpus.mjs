@@ -1,4 +1,4 @@
-// One corpus for every gate: the 23 gallery samples, the variants the family
+// One corpus for every gate: the gallery samples, the variants the family
 // grid cannot reach, and the extra specs worth asserting but not drawing in the
 // README.
 //
@@ -12,6 +12,27 @@
 //   VARIANTS grouped/stacked series, narrow widths and tight heights; goldens.
 //   EDGE_SPECS  further cases; audit, fidelity and perf (and goldens through
 //               edgeSpecs(), which includes the variants).
+
+/**
+ * Daily calendar data for a civil range. Weekends are zero, weekdays a
+ * deterministic 0..10, so the sample exercises the whole ramp without a long
+ * literal. The calendar is the one family whose picture is its range: a month
+ * is ten columns wide, half a year fills the terminal.
+ */
+function calendarDays(startISO, endISO) {
+  const dates = [];
+  const values = [];
+  const end = Date.parse(`${endISO}T00:00:00Z`);
+  for (let stamp = Date.parse(`${startISO}T00:00:00Z`); stamp <= end; stamp += 86_400_000) {
+    const date = new Date(stamp);
+    const weekday = (date.getUTCDay() + 6) % 7;
+    dates.push(date.toISOString().slice(0, 10));
+    values.push(weekday >= 5 ? 0 : (date.getUTCDate() * 7 + date.getUTCMonth() * 3) % 11);
+  }
+  return { dates, values };
+}
+
+const CALENDAR_HALF_YEAR = calendarDays("2026-01-01", "2026-06-30");
 
 /** One sample fence per family, shared by the dump and the image generator. */
 export const SAMPLES = {
@@ -125,6 +146,50 @@ export const SAMPLES = {
       { label: "Test", group: "Delivery", start: "2026-11-30", end: "2026-12-11" },
       { label: "Launch", group: "Delivery", at: "2026-12-14", milestone: true },
       { label: "Hypercare", group: "Delivery", start: "2026-12-14", end: "2027-01-08" },
+    ],
+  },
+  box: {
+    title: "Latency by service",
+    labels: ["API", "ETL", "Web"],
+    values: [
+      [12, 15, 14, 18, 22, 13, 16, 19, 55],
+      [20, 24, 22, 26, 30, 21, 23, 28],
+      [8, 9, 9, 10, 11, 9, 10, 12, 40],
+    ],
+  },
+  funnel: {
+    title: "Signup funnel",
+    labels: ["Visitors", "Signups", "Trials", "Paid"],
+    values: [1000, 420, 180, 64],
+  },
+  calendar: { title: "Commits", ...CALENDAR_HALF_YEAR },
+  bullet: {
+    title: "Quarter targets",
+    labels: ["Revenue", "Margin", "NPS"],
+    values: [72, 64, 81],
+    targets: [100, 80, 75],
+    ranges: [[0, 50], [50, 80], [80, 100]],
+    max: 100,
+  },
+  slope: {
+    title: "Score change",
+    labels: ["Alpha", "Beta", "Gamma", "Delta"],
+    series: [
+      { name: "Q1", values: [40, 65, 30, 80] },
+      { name: "Q2", values: [55, 60, 45, 72] },
+    ],
+  },
+  dot: {
+    title: "Latency",
+    labels: ["api", "etl", "web", "auth", "search"],
+    values: [42, 66, 28, 51, 19],
+  },
+  combo: {
+    title: "Revenue vs plan",
+    labels: ["Q1", "Q2", "Q3", "Q4"],
+    series: [
+      { name: "Actual", type: "bar", values: [42, 55, 61, 74] },
+      { name: "Plan", type: "line", values: [40, 50, 60, 70] },
     ],
   },
 };
@@ -272,7 +337,7 @@ export const EDGE_SPECS = {
 };
 
 /**
- * Every spec a gate should assert beyond the 23 gallery samples: the variants
+ * Every spec a gate should assert beyond the gallery samples: the variants
  * first, then the extra edge cases. Each entry is named, so a failure says which
  * case broke instead of "a spec".
  *

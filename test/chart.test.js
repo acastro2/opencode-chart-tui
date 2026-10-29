@@ -88,6 +88,26 @@ const specs = {
   heatmap: { type: "heatmap", width: 40, cellWidth: 2, headers: ["x", "y"], rows: [{ label: "r", values: [1, 2] }] },
   gauge: { type: "gauge", width: 40, label: "Coverage", value: 62, max: 100 },
   progress: { type: "progress", width: 40, label: "Done", value: 0.4, max: 1 },
+  box: { type: "box", width: 48, labels: ["a", "b"], values: [[1, 2, 3, 9], [2, 3, 4]] },
+  funnel: { type: "funnel", width: 44, labels: ["visit", "signup", "pay"], values: [100, 40, 10] },
+  calendar: {
+    type: "calendar", width: 44,
+    dates: ["2026-01-01", "2026-01-05", "2026-01-12"],
+    values: [3, 6, 1],
+  },
+  bullet: { type: "bullet", width: 44, labels: ["rev", "nps"], values: [72, 81], targets: [100, 75], max: 100 },
+  slope: {
+    type: "slope", width: 44, labels: ["a", "b"],
+    series: [{ name: "Q1", values: [1, 5] }, { name: "Q2", values: [4, 2] }],
+  },
+  dot: { type: "dot", width: 44, labels: ["a", "b", "c"], values: [3, 7, 5] },
+  combo: {
+    type: "combo", width: 46, labels: ["a", "b"],
+    series: [
+      { name: "actual", type: "bar", values: [2, 4] },
+      { name: "plan", type: "line", values: [3, 3] },
+    ],
+  },
 };
 
 check("every registered type renders rows inside the width", () => {

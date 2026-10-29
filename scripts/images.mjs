@@ -9,8 +9,8 @@
 //
 // Writes assets/<type>.svg, or assets/light/<type>.svg with --theme light.
 //
-// One picture per family, from the 23 gallery samples only. The README gallery
-// is a 23-card grid and `assets/` is its source of truth; an edge spec here
+// One picture per family, from the gallery samples only. The README gallery
+// is a card grid and `assets/` is its source of truth; an edge spec here
 // would add a file with no family name and no card. Edge behaviour is checked
 // by audit, fidelity and the run goldens, which do not need a picture.
 

@@ -45,6 +45,15 @@ export const VALUE_POLICY = {
   candlestick: { null: DROP, invalid: DROP, selfReports: true },
   ohlc: { null: DROP, invalid: DROP, selfReports: true },
   heatmap: { null: HOLE, invalid: HOLE, selfReports: true },
+  // New families (0.3): a sample, a stage and a pair are all dropped when they
+  // cannot be read; a count and a magnitude read as zero.
+  box: { null: DROP, invalid: DROP },
+  funnel: { null: DROP, invalid: DROP },
+  calendar: { null: ZERO, invalid: DROP },
+  bullet: { null: ZERO, invalid: ZERO },
+  slope: { null: ZERO, invalid: ZERO },
+  dot: { null: ZERO, invalid: ZERO },
+  combo: { null: ZERO, invalid: ZERO },
 };
 
 /** Scatter points are a different list from series values: both ends are strict. */
