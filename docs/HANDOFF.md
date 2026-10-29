@@ -10,7 +10,7 @@ fixes the words. Decisions live in `docs/adr/`; this file only points at them.
 
 ## 1. Current state
 
-A dependency-free ES-module library that draws 23 chart families from a ```chart
+A dependency-free ES-module library that draws 30 chart families from a ```chart
 fence, plus the OpenCode TUI plugin that renders it. Nothing is an image: every
 family returns `{ width, runs }` rows, and plain text is those rows concatenated.
 
@@ -20,17 +20,37 @@ fence JSON -> src/chart.js (parse, coerce, fit height, note footer)
            -> rows -> renderChart() as text, or tui.js as buffer cells
 ```
 
+The 30 types come from 22 family modules: `pie` also draws `donut`, `bar` also
+draws `column` and `hbar`, `line` also draws `area`, `sparkline` and `scatter`,
+`candle` also draws `candlestick`, and `gauge` also draws `progress`; the rest
+are one module each — `histogram`, `ohlc`, `heatmap`, `waterfall`, `table`,
+`radar`, `treemap`, `sankey`, `kanban`, `gantt`, `box`, `funnel`, `calendar`,
+`bullet`, `slope`, `dot`, `combo`. The 0.3 additions were written against the same
+seams as the rest — a declared fate in `values.js`, a `layoutFor` budget, one
+corpus sample and golden frames — so nothing about them is a special case in the
+dispatcher.
+
+The visual pass after the first build changed five pictures: `calendar` days are
+`▀` half blocks (seven full blocks read as one bar), `funnel` stages are 2–3 rows
+tall, `slope` is a true two-column slopegraph on an exact min..max scale, `bullet`
+uses one bar colour with muted bands and `→` between value and target, and `combo`
+bars are three cells wide with a `●` on every line point. The combo line is drawn
+at sub-cell resolution, like `line.js`: a cell-per-column `─ ╱ ╲` was a staircase,
+not a line. The calendar sample is now a half year: a month is ten columns wide
+by nature and read as a small block in a wide pane.
+
 Gates, measured on this tree (2026-10-27, Node 24.22.1):
 
 | gate | command | result |
 |---|---|---|
-| unit and property | `npm test` | 503 checks, 26/26 suites |
-| data, width, height | `npm run audit` | 58/58 |
+| unit and property | `npm test` | 603 checks, 33/33 suites |
+| data, width, height | `npm run audit` | 65/65 |
 | geometry vs reference | `npm run fidelity` | 45/45 |
-| pictures | `npm run golden` | 954 text frames + 34 run frames |
-| large inputs | `npm run perf` | 27/27 under budget |
+| pictures | `npm run golden` | 1164 text frames + 41 run frames |
+| large inputs | `npm run perf` | 34/34 under budget |
 | pie area | `npm run accuracy` | 628.3 ideal, −0.5 / −0.3 / −0.1% |
-| complexity | `crapper src` | 0 functions at CRAP ≥ 10 (worst 9.4) |
+| complexity | `crapper src` | 0 functions at CRAP ≥ 10 (worst 9.6, `normalizeBoxes`) |
+| schema contract | `node scripts/schema.mjs --check` | 30 types, 76 keys, no drift |
 
 ## 2. How to work
 

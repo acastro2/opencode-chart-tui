@@ -18,12 +18,12 @@ colour or `kind` regression would still pass today, because text does not change
 
 ## Decision
 
-- `scripts/corpus.mjs` owns the specs: the 23 gallery `SAMPLES`, the `VARIANTS`,
+- `scripts/corpus.mjs` owns the specs: the gallery `SAMPLES`, the `VARIANTS`,
   and `edgeSpecs()` for shapes the gallery cannot show. Every gate reads it.
 - Goldens store two things per family and variant: the text frames (954) and the
   **run frames** (34 at width 56, dark) — `{ text, kind, slice, fg, bg }` per run
   through `styleOf`. A kind demotion or a colour swap fails without a text diff.
-- `dump.mjs` and `images.mjs` stay on the 23 gallery samples, because their
+- `dump.mjs` and `images.mjs` stay on the gallery samples, because their
   output is the README gallery, not a test surface.
 
 ## Consequences

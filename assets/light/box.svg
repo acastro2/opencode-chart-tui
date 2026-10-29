@@ -1,0 +1,76 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="636" height="120" viewBox="0 0 636 120" font-family="'JetBrains Mono','SF Mono',Menlo,Consolas,'DejaVu Sans Mono',monospace" shape-rendering="crispEdges">
+<rect width="100%" height="100%" rx="10" fill="#ffffff"/>
+<rect x="0" y="0" width="100%" height="26" rx="10" fill="#f3f4f6"/>
+<rect x="0" y="16" width="100%" height="10" fill="#f3f4f6"/>
+<circle cx="16" cy="13" r="5" fill="#ff5f57"/><circle cx="34" cy="13" r="5" fill="#febc2e"/><circle cx="52" cy="13" r="5" fill="#28c840"/>
+<text x="318" y="17" fill="#57606a" font-size="12" text-anchor="middle">box</text>
+<text x="18" y="38" fill="#1f2328" font-size="12.5" font-family="'JetBrains Mono','SF Mono',Menlo,Consolas,'DejaVu Sans Mono',monospace" text-anchor="middle">L</text>
+<text x="26" y="38" fill="#1f2328" font-size="12.5" font-family="'JetBrains Mono','SF Mono',Menlo,Consolas,'DejaVu Sans Mono',monospace" text-anchor="middle">a</text>
+<text x="34" y="38" fill="#1f2328" font-size="12.5" font-family="'JetBrains Mono','SF Mono',Menlo,Consolas,'DejaVu Sans Mono',monospace" text-anchor="middle">t</text>
+<text x="42" y="38" fill="#1f2328" font-size="12.5" font-family="'JetBrains Mono','SF Mono',Menlo,Consolas,'DejaVu Sans Mono',monospace" text-anchor="middle">e</text>
+<text x="50" y="38" fill="#1f2328" font-size="12.5" font-family="'JetBrains Mono','SF Mono',Menlo,Consolas,'DejaVu Sans Mono',monospace" text-anchor="middle">n</text>
+<text x="58" y="38" fill="#1f2328" font-size="12.5" font-family="'JetBrains Mono','SF Mono',Menlo,Consolas,'DejaVu Sans Mono',monospace" text-anchor="middle">c</text>
+<text x="66" y="38" fill="#1f2328" font-size="12.5" font-family="'JetBrains Mono','SF Mono',Menlo,Consolas,'DejaVu Sans Mono',monospace" text-anchor="middle">y</text>
+<text x="82" y="38" fill="#1f2328" font-size="12.5" font-family="'JetBrains Mono','SF Mono',Menlo,Consolas,'DejaVu Sans Mono',monospace" text-anchor="middle">b</text>
+<text x="90" y="38" fill="#1f2328" font-size="12.5" font-family="'JetBrains Mono','SF Mono',Menlo,Consolas,'DejaVu Sans Mono',monospace" text-anchor="middle">y</text>
+<text x="106" y="38" fill="#1f2328" font-size="12.5" font-family="'JetBrains Mono','SF Mono',Menlo,Consolas,'DejaVu Sans Mono',monospace" text-anchor="middle">s</text>
+<text x="114" y="38" fill="#1f2328" font-size="12.5" font-family="'JetBrains Mono','SF Mono',Menlo,Consolas,'DejaVu Sans Mono',monospace" text-anchor="middle">e</text>
+<text x="122" y="38" fill="#1f2328" font-size="12.5" font-family="'JetBrains Mono','SF Mono',Menlo,Consolas,'DejaVu Sans Mono',monospace" text-anchor="middle">r</text>
+<text x="130" y="38" fill="#1f2328" font-size="12.5" font-family="'JetBrains Mono','SF Mono',Menlo,Consolas,'DejaVu Sans Mono',monospace" text-anchor="middle">v</text>
+<text x="138" y="38" fill="#1f2328" font-size="12.5" font-family="'JetBrains Mono','SF Mono',Menlo,Consolas,'DejaVu Sans Mono',monospace" text-anchor="middle">i</text>
+<text x="146" y="38" fill="#1f2328" font-size="12.5" font-family="'JetBrains Mono','SF Mono',Menlo,Consolas,'DejaVu Sans Mono',monospace" text-anchor="middle">c</text>
+<text x="154" y="38" fill="#1f2328" font-size="12.5" font-family="'JetBrains Mono','SF Mono',Menlo,Consolas,'DejaVu Sans Mono',monospace" text-anchor="middle">e</text>
+<text x="18" y="54" fill="#57606a" font-size="12.5" font-family="'JetBrains Mono','SF Mono',Menlo,Consolas,'DejaVu Sans Mono',monospace" text-anchor="middle">A</text>
+<text x="26" y="54" fill="#57606a" font-size="12.5" font-family="'JetBrains Mono','SF Mono',Menlo,Consolas,'DejaVu Sans Mono',monospace" text-anchor="middle">P</text>
+<text x="34" y="54" fill="#57606a" font-size="12.5" font-family="'JetBrains Mono','SF Mono',Menlo,Consolas,'DejaVu Sans Mono',monospace" text-anchor="middle">I</text>
+<text x="162" y="54" fill="#57606a" font-size="12.5" font-family="'JetBrains Mono','SF Mono',Menlo,Consolas,'DejaVu Sans Mono',monospace" text-anchor="middle">├</text>
+<text x="170" y="54" fill="#57606a" font-size="12.5" font-family="'JetBrains Mono','SF Mono',Menlo,Consolas,'DejaVu Sans Mono',monospace" text-anchor="middle">─</text>
+<text x="178" y="54" fill="#57606a" font-size="12.5" font-family="'JetBrains Mono','SF Mono',Menlo,Consolas,'DejaVu Sans Mono',monospace" text-anchor="middle">─</text>
+<rect x="182.00" y="42.00" width="8.00" height="16.00" fill="#1f6fb2"/>
+<rect x="190.00" y="42.00" width="8.00" height="16.00" fill="#1f6fb2"/>
+<rect x="198" y="42" width="8" height="16" fill="#1f6fb2"/>
+<text x="202" y="54" fill="#ffffff" font-size="12.5" font-family="'JetBrains Mono','SF Mono',Menlo,Consolas,'DejaVu Sans Mono',monospace" text-anchor="middle">│</text>
+<rect x="206.00" y="42.00" width="8.00" height="16.00" fill="#1f6fb2"/>
+<rect x="214.00" y="42.00" width="8.00" height="16.00" fill="#1f6fb2"/>
+<rect x="222.00" y="42.00" width="8.00" height="16.00" fill="#1f6fb2"/>
+<text x="234" y="54" fill="#57606a" font-size="12.5" font-family="'JetBrains Mono','SF Mono',Menlo,Consolas,'DejaVu Sans Mono',monospace" text-anchor="middle">─</text>
+<text x="242" y="54" fill="#57606a" font-size="12.5" font-family="'JetBrains Mono','SF Mono',Menlo,Consolas,'DejaVu Sans Mono',monospace" text-anchor="middle">─</text>
+<text x="250" y="54" fill="#57606a" font-size="12.5" font-family="'JetBrains Mono','SF Mono',Menlo,Consolas,'DejaVu Sans Mono',monospace" text-anchor="middle">─</text>
+<text x="258" y="54" fill="#57606a" font-size="12.5" font-family="'JetBrains Mono','SF Mono',Menlo,Consolas,'DejaVu Sans Mono',monospace" text-anchor="middle">┤</text>
+<text x="570" y="54" fill="#57606a" font-size="12.5" font-family="'JetBrains Mono','SF Mono',Menlo,Consolas,'DejaVu Sans Mono',monospace" text-anchor="middle">●</text>
+<text x="18" y="70" fill="#57606a" font-size="12.5" font-family="'JetBrains Mono','SF Mono',Menlo,Consolas,'DejaVu Sans Mono',monospace" text-anchor="middle">E</text>
+<text x="26" y="70" fill="#57606a" font-size="12.5" font-family="'JetBrains Mono','SF Mono',Menlo,Consolas,'DejaVu Sans Mono',monospace" text-anchor="middle">T</text>
+<text x="34" y="70" fill="#57606a" font-size="12.5" font-family="'JetBrains Mono','SF Mono',Menlo,Consolas,'DejaVu Sans Mono',monospace" text-anchor="middle">L</text>
+<text x="242" y="70" fill="#57606a" font-size="12.5" font-family="'JetBrains Mono','SF Mono',Menlo,Consolas,'DejaVu Sans Mono',monospace" text-anchor="middle">├</text>
+<text x="250" y="70" fill="#57606a" font-size="12.5" font-family="'JetBrains Mono','SF Mono',Menlo,Consolas,'DejaVu Sans Mono',monospace" text-anchor="middle">─</text>
+<rect x="254.00" y="58.00" width="8.00" height="16.00" fill="#2f8f5b"/>
+<rect x="262.00" y="58.00" width="8.00" height="16.00" fill="#2f8f5b"/>
+<rect x="270" y="58" width="8" height="16" fill="#2f8f5b"/>
+<text x="274" y="70" fill="#ffffff" font-size="12.5" font-family="'JetBrains Mono','SF Mono',Menlo,Consolas,'DejaVu Sans Mono',monospace" text-anchor="middle">│</text>
+<rect x="278.00" y="58.00" width="8.00" height="16.00" fill="#2f8f5b"/>
+<rect x="286.00" y="58.00" width="8.00" height="16.00" fill="#2f8f5b"/>
+<rect x="294.00" y="58.00" width="8.00" height="16.00" fill="#2f8f5b"/>
+<text x="306" y="70" fill="#57606a" font-size="12.5" font-family="'JetBrains Mono','SF Mono',Menlo,Consolas,'DejaVu Sans Mono',monospace" text-anchor="middle">─</text>
+<text x="314" y="70" fill="#57606a" font-size="12.5" font-family="'JetBrains Mono','SF Mono',Menlo,Consolas,'DejaVu Sans Mono',monospace" text-anchor="middle">─</text>
+<text x="322" y="70" fill="#57606a" font-size="12.5" font-family="'JetBrains Mono','SF Mono',Menlo,Consolas,'DejaVu Sans Mono',monospace" text-anchor="middle">─</text>
+<text x="330" y="70" fill="#57606a" font-size="12.5" font-family="'JetBrains Mono','SF Mono',Menlo,Consolas,'DejaVu Sans Mono',monospace" text-anchor="middle">─</text>
+<text x="338" y="70" fill="#57606a" font-size="12.5" font-family="'JetBrains Mono','SF Mono',Menlo,Consolas,'DejaVu Sans Mono',monospace" text-anchor="middle">┤</text>
+<text x="18" y="86" fill="#57606a" font-size="12.5" font-family="'JetBrains Mono','SF Mono',Menlo,Consolas,'DejaVu Sans Mono',monospace" text-anchor="middle">W</text>
+<text x="26" y="86" fill="#57606a" font-size="12.5" font-family="'JetBrains Mono','SF Mono',Menlo,Consolas,'DejaVu Sans Mono',monospace" text-anchor="middle">e</text>
+<text x="34" y="86" fill="#57606a" font-size="12.5" font-family="'JetBrains Mono','SF Mono',Menlo,Consolas,'DejaVu Sans Mono',monospace" text-anchor="middle">b</text>
+<text x="122" y="86" fill="#57606a" font-size="12.5" font-family="'JetBrains Mono','SF Mono',Menlo,Consolas,'DejaVu Sans Mono',monospace" text-anchor="middle">├</text>
+<text x="130" y="86" fill="#57606a" font-size="12.5" font-family="'JetBrains Mono','SF Mono',Menlo,Consolas,'DejaVu Sans Mono',monospace" text-anchor="middle">─</text>
+<rect x="134.00" y="74.00" width="8.00" height="16.00" fill="#a97a12"/>
+<rect x="142" y="74" width="8" height="16" fill="#a97a12"/>
+<text x="146" y="86" fill="#ffffff" font-size="12.5" font-family="'JetBrains Mono','SF Mono',Menlo,Consolas,'DejaVu Sans Mono',monospace" text-anchor="middle">│</text>
+<rect x="150.00" y="74.00" width="8.00" height="16.00" fill="#a97a12"/>
+<text x="162" y="86" fill="#57606a" font-size="12.5" font-family="'JetBrains Mono','SF Mono',Menlo,Consolas,'DejaVu Sans Mono',monospace" text-anchor="middle">┤</text>
+<text x="426" y="86" fill="#57606a" font-size="12.5" font-family="'JetBrains Mono','SF Mono',Menlo,Consolas,'DejaVu Sans Mono',monospace" text-anchor="middle">●</text>
+<text x="50" y="102" fill="#57606a" font-size="12.5" font-family="'JetBrains Mono','SF Mono',Menlo,Consolas,'DejaVu Sans Mono',monospace" text-anchor="middle">0</text>
+<text x="234" y="102" fill="#57606a" font-size="12.5" font-family="'JetBrains Mono','SF Mono',Menlo,Consolas,'DejaVu Sans Mono',monospace" text-anchor="middle">2</text>
+<text x="242" y="102" fill="#57606a" font-size="12.5" font-family="'JetBrains Mono','SF Mono',Menlo,Consolas,'DejaVu Sans Mono',monospace" text-anchor="middle">0</text>
+<text x="418" y="102" fill="#57606a" font-size="12.5" font-family="'JetBrains Mono','SF Mono',Menlo,Consolas,'DejaVu Sans Mono',monospace" text-anchor="middle">4</text>
+<text x="426" y="102" fill="#57606a" font-size="12.5" font-family="'JetBrains Mono','SF Mono',Menlo,Consolas,'DejaVu Sans Mono',monospace" text-anchor="middle">0</text>
+<text x="610" y="102" fill="#57606a" font-size="12.5" font-family="'JetBrains Mono','SF Mono',Menlo,Consolas,'DejaVu Sans Mono',monospace" text-anchor="middle">6</text>
+<text x="618" y="102" fill="#57606a" font-size="12.5" font-family="'JetBrains Mono','SF Mono',Menlo,Consolas,'DejaVu Sans Mono',monospace" text-anchor="middle">0</text>
+</svg>

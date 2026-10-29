@@ -1,6 +1,6 @@
 ---
 name: opencode-charts
-description: "Draw a chart in the OpenCode terminal from a ```chart fenced block whose body is JSON. Reach for one as naturally as a Mermaid diagram: whenever a reply involves numbers that compare, a trend over time, a share of a whole, a ranking, a distribution, a plan or timeline, a flow, a hierarchy, or the state of work, draw the family that carries the point instead of listing figures. Also use when the user asks for a specific chart (pie, bar, line, histogram, candlestick, waterfall, heat map, gauge, radar, treemap, sankey, kanban, gantt) or when a chart that is already up needs its type, size or colours changed. Not for sharing charts outside the terminal (use a document or an image for that)."
+description: "Draw a chart in the OpenCode terminal from a ```chart fenced block whose body is JSON. Reach for one as naturally as a Mermaid diagram: whenever a reply involves numbers that compare, a trend over time, a share of a whole, a ranking, a distribution, a plan or timeline, a flow, a hierarchy, or the state of work, draw the family that carries the point instead of listing figures. Also use when the user asks for a specific chart (pie, bar, line, histogram, candlestick, waterfall, heat map, gauge, radar, treemap, sankey, kanban, gantt, box plot, funnel, calendar, bullet, slope, dot, combo) or when a chart that is already up needs its type, size or colours changed. Not for sharing charts outside the terminal (use a document or an image for that)."
 ---
 
 # Charts in the terminal
@@ -21,9 +21,14 @@ A chart in a reply is communication, not decoration. The same way a Mermaid bloc
 | this changed over time | `line`; `area` when the volume matters; `sparkline` inline in a sentence |
 | this is the mix of a whole | `pie` or `donut`; `bar` with `normalized` when there are many parts |
 | how the mix moves over time | `area` with `stacked`, `normalized` for shares only |
-| how these values are spread | `histogram` |
-| ahead of or behind a target | `gauge`, `progress` |
+| how these values are spread | `histogram`; `box` when the spread itself is the point, or when several groups must share one scale |
+| ahead of or behind a target | `gauge`, `progress`; `bullet` for a list of measures with their targets and bands |
 | how a number got from A to B, and what moved it | `waterfall` |
+| how a process narrows, stage by stage | `funnel` |
+| what changed between exactly two points, per item | `slope` |
+| activity by date, day by day | `calendar` |
+| a dense ranking with less ink than bars | `dot` |
+| bars and a trend on one shared scale | `combo` |
 | price moved within each period | `candlestick` (filled body), `candle`, `ohlc` (open/close ticks) |
 | a plan with dates and milestones | `gantt` |
 | where a flow goes, and how much is lost | `sankey` |
@@ -44,7 +49,7 @@ Etiquette:
 
 ## Rules
 
-- Name the `type`. There are 23: `pie`, `donut`, `bar`, `column`, `hbar`, `histogram`, `candle`, `candlestick`, `ohlc`, `line`, `area`, `sparkline`, `scatter`, `heatmap`, `gauge`, `progress`, `waterfall`, `table`, `radar`, `treemap`, `sankey`, `kanban`, `gantt`. If it is missing, the shape of the data decides (slices → pie, rows → heat map, values or series → bar) and the chart says so in a footer.
+- Name the `type`. There are 30: `pie`, `donut`, `bar`, `column`, `hbar`, `histogram`, `candle`, `candlestick`, `ohlc`, `line`, `area`, `sparkline`, `scatter`, `heatmap`, `gauge`, `progress`, `waterfall`, `table`, `radar`, `treemap`, `sankey`, `kanban`, `gantt`, `box`, `funnel`, `calendar`, `bullet`, `slope`, `dot`, `combo`. If it is missing, the shape of the data decides (slices → pie, rows → heat map, values or series → bar) and the chart says so in a footer.
 - `bar` is an alias of `column`: both draw vertical bars. Use `hbar` for horizontal bars. `candle` and `candlestick` share one renderer, and `ohlc` draws ticks on the same data.
 - `height` is the **total rows** of the block: title, label row, legend and notes included. `plotHeight` sets the plot rows and overrides the plot part of `height`. A chart never draws more rows than `height`.
 - Leave `width` out unless the chart should be narrow. With no width it uses the pane, stopping at 110 columns for grid-like families (treemap, kanban, table, heat map) and 160 for the rest. A width wider than the pane is clipped to the pane.
@@ -178,6 +183,72 @@ Etiquette:
 
 A `gantt` task takes `label` plus `start` and `end` (numbers, or ISO dates like `2026-11-02`), or `at` for a milestone. `group` starts a section, `today` draws the vertical marker.
 
+**box**
+```chart
+{"type":"box","title":"Latency by service","labels":["API","ETL","Web"],"values":[[12,15,14,18,22,13,16,19,55],[20,24,22,26,30,21,23,28],[8,9,9,10,11,9,10,12,40]]}
+```
+
+A `box` takes `labels` and one sample array per label. Each box draws its median,
+quartiles and whiskers, and dots the outliers; every group shares one scale, so
+the boxes are comparable. Use it when the spread matters, not just the average.
+
+**funnel**
+```chart
+{"type":"funnel","title":"Signup funnel","labels":["Visitors","Signups","Trials","Paid"],"values":[1000,420,180,64]}
+```
+
+A `funnel` draws stages top to bottom, each stage a band two or three rows tall whose width follows its value, so the silhouette narrows. The percentage
+is measured against the **first** stage, not the row above: 1000, 420, 180, 64
+reads 100%, 42%, 18%, 6.4%. Add `showPercent: false` to hide the column.
+
+**calendar**
+```chart
+{"type":"calendar","title":"Commits","dates":["2026-01-01","2026-01-02","2026-01-05","2026-01-06","2026-01-07","2026-01-08","2026-01-09","2026-01-12","2026-01-13","2026-01-14","2026-01-15","2026-01-16","2026-01-19","2026-01-20","2026-01-21","2026-01-22","2026-01-23","2026-01-26","2026-01-27","2026-01-28","2026-01-29"],"values":[3,5,2,6,1,7,4,2,8,3,5,1,0,6,4,3,7,2,5,3,9]}
+```
+
+A `calendar` takes `dates` (ISO) and a parallel `values` array. One block is one
+day, rows are weekdays Monday-first, and a week is one column plus a gap. A range
+wider than the chart keeps the newest weeks and prints `N weeks hidden`; the
+month name sits over the week that holds the 1st. A single month is ten columns
+wide by nature: pass a quarter or half a year when the picture must fill the
+terminal.
+
+**bullet**
+```chart
+{"type":"bullet","title":"Quarter targets","labels":["Revenue","Margin","NPS"],"values":[72,64,81],"targets":[100,80,75],"ranges":[[0,50],[50,80],[80,100]],"max":100}
+```
+
+A `bullet` draws one row per measure: the bar is the value, the `│` tick is the
+target, and `ranges` shade the background as bands. `ranges` are `[lo, hi]` pairs,
+lowest first, so the darkest band is the lowest one. `max` fixes the scale.
+
+**slope**
+```chart
+{"type":"slope","title":"Score change","labels":["Alpha","Beta","Gamma","Delta"],"series":[{"name":"Q1","values":[40,65,30,80]},{"name":"Q2","values":[55,60,45,72]}]}
+```
+
+A `slope` needs exactly two series — before and after — plus `labels`. Each
+category gets a mark in the first and last column, a line between them, and its value printed at each end. Lines cross when ranks change.
+Any other series count prints `no data` and the reason.
+
+**dot**
+```chart
+{"type":"dot","title":"Latency","labels":["api","etl","web","auth","search"],"values":[42,66,28,51,19]}
+```
+
+A `dot` puts one dot per category on a shared axis, one row each. `sort: true`
+orders the rows by value. It says the same thing as `hbar` with less ink, which
+is what you want past about ten categories.
+
+**combo**
+```chart
+{"type":"combo","title":"Revenue vs plan","labels":["Q1","Q2","Q3","Q4"],"series":[{"name":"Actual","type":"bar","values":[42,55,61,74]},{"name":"Plan","type":"line","values":[40,50,60,70]}]}
+```
+
+A `combo` mixes bars and a line in one frame on one shared scale from zero; each
+series sets `type` to `"bar"` or `"line"`. It needs at least one of each and says
+which one is missing if you forget.
+
 ## Options worth knowing
 
 | key | meaning |
@@ -188,14 +259,19 @@ A `gantt` task takes `label` plus `start` and `end` (numbers, or ISO dates like 
 | `cellAspect` | how much taller a cell is than wide, for the round families; measured from the terminal, `2` when it cannot be — a font that draws the pie taller than wide wants about `2.3` |
 | `zero: false` | line, scatter, candle: fit the axis to the data instead of anchoring it at zero |
 | `normalized` | bar and area: every stack becomes 100% |
-| `showPercent: false` | hide the share next to a single-series value |
-| `max` | radar: share one scale between charts |
+| `showPercent: false` | bar: hide the share next to a single-series value; funnel: hide the conversion column |
+| `max` | radar: share one scale between charts; bullet: fix the end of the scale |
 | `spokes: false` | radar: drop the axis lines |
 | `height` | total rows, including title, labels, legend and notes |
 | `plotHeight` | plot rows; overrides the plot part of `height` |
 | `boundaryColor` | the colour of the line where two slices meet |
 | `up` / `down` | candle: override the two directions |
 | `low` / `high` | heat map: override the ramp ends |
+| `dates` | calendar: ISO dates, parallel to `values` |
+| `targets` | bullet: one target per row, drawn as a tick |
+| `ranges` | bullet: `[lo, hi]` bands, lowest first (darkest first) |
+| `series[].type` | combo: `bar` or `line`, per series |
+| `sort` | hbar and dot: rank the rows by value |
 
 Renamed keys still draw and are reported in the footer: `percent` → `showPercent`, a string `gap` → `boundaryColor`, a heat map's `columns` → `headers`. A numeric `gap` is not a colour: it is the blank space a kanban puts between columns, and it keeps that meaning. The rest of the aliases are listed in `schema/chart.schema.json`.
 

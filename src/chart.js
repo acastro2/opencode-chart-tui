@@ -26,6 +26,13 @@ import { renderTreemapRows } from "./treemap.js";
 import { renderSankeyRows } from "./sankey.js";
 import { renderKanbanRows } from "./kanban.js";
 import { renderGanttRows } from "./gantt.js";
+import { renderBoxRows } from "./box.js";
+import { renderFunnelRows } from "./funnel.js";
+import { renderCalendarRows } from "./calendar.js";
+import { renderBulletRows } from "./bullet.js";
+import { renderSlopeRows } from "./slope.js";
+import { renderDotRows } from "./dot.js";
+import { renderComboRows } from "./combo.js";
 
 export const CHART_TYPES = {
   pie: renderPieRows,
@@ -51,6 +58,13 @@ export const CHART_TYPES = {
   sankey: renderSankeyRows,
   kanban: renderKanbanRows,
   gantt: renderGanttRows,
+  box: renderBoxRows,
+  funnel: renderFunnelRows,
+  calendar: renderCalendarRows,
+  bullet: renderBulletRows,
+  slope: renderSlopeRows,
+  dot: renderDotRows,
+  combo: renderComboRows,
 };
 
 /** A refusal: no spec, and the reason in plain words. */

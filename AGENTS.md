@@ -33,7 +33,7 @@ src/core.js         cells, runs, the sub-cell sampler, wrapping, colour mixes
 src/theme.js        dark/light palettes, muted tones, styleOf(run) -> colours
 src/mosaic.js       quadrant / sextant / octant glyph tables
 src/axis.js         nice bounds, the box-model axis, label rows
-src/<family>.js     one module per chart family (23 registered types)
+src/<family>.js     one module per family renderer (22 files, 30 registered types)
 test/*.test.js      one suite per family plus core/parse/theme/chart/layout/values/schema
 scripts/corpus.mjs  SAMPLES + VARIANTS + EDGE_SPECS: read by every gate
 scripts/            audit, fidelity, golden, perf, schema, dump, images, gallery
@@ -53,14 +53,14 @@ Two rules hold the design together. Break either and the repo gets worse:
 Full list and what each gate proves: `docs/HANDOFF.md` §2.
 
 ```sh
-npm test                    # 503 checks in 26/26 suites, the gate for everything
+npm test                    # 603 checks in 33/33 suites, the gate for everything
 node test/gantt.test.js     # one suite, prints "N/N checks passed"
-npm run audit               # 58/58: width, bounds, data accounting, no crash
+npm run audit               # 65/65: width, bounds, data accounting, no crash
 npm run fidelity            # 45/45: geometry against a formula
-npm run golden              # 954 text + 34 run frames; --update only after review
-npm run perf                # 27/27 on large inputs
+npm run golden              # 1164 text + 41 run frames; --update only after review
+npm run perf                # 34/34 on large inputs
 npm run accuracy            # pie rim: 628.3 ideal, <=0.5% error
-crapper src                 # 0 functions at CRAP >= 10 (worst 9.4)
+crapper src                 # 0 functions at CRAP >= 10 (worst 9.6)
 node scripts/dump.mjs 58    # every family as plain text -> review/renders.txt
 node scripts/images.mjs 76  # every family as SVG            -> assets/*.svg
 ```
@@ -69,7 +69,7 @@ node scripts/images.mjs 76  # every family as SVG            -> assets/*.svg
 `assets/*.svg` is how a human looks at it. Regenerate both when a family's
 output changes, or the README gallery starts lying.
 
-## 3. Adding a family (the recipe that worked, 23 times)
+## 3. Adding a family (the recipe that worked, 30 times)
 
 1. **Normalize the input in its own exported function** (`normalizeTasks`,
    `normalizeCandles`, `normalizeTree`). Drop rows that cannot be drawn instead

@@ -15,7 +15,8 @@
         "line", "area", "sparkline", "scatter",
         "heatmap", "gauge", "progress",
         "waterfall", "table",
-        "radar", "treemap", "sankey", "kanban", "gantt"
+        "radar", "treemap", "sankey", "kanban", "gantt",
+        "box", "funnel", "calendar", "bullet", "slope", "dot", "combo"
       ]
     },
     "title": { "type": "string", "description": "Bold heading above the chart." },
@@ -43,7 +44,8 @@
         "required": ["values"],
         "properties": {
           "name": { "type": "string" },
-          "values": { "type": "array", "items": { "type": "number" } }
+          "values": { "type": "array", "items": { "type": "number" } },
+          "type": { "enum": ["bar", "line"], "description": "Combo only: how this series is drawn. Defaults to a line." }
         }
       },
       "description": "Named series, [{name, values}]. Wins over values."
@@ -66,6 +68,9 @@
     "up": { "type": "string", "description": "Candles and waterfall: colour of an upward move." },
     "down": { "type": "string", "description": "Candles and waterfall: colour of a downward move." },
     "candles": { "type": "array", "items": { "type": "object", "required": ["open", "high", "low", "close"] }, "description": "Candle data as {open, high, low, close} objects, instead of nested values." },
+    "dates": { "type": "array", "items": { "type": "string" }, "description": "Calendar: ISO dates (YYYY-MM-DD), parallel to `values`. The grid spans the first to the last date." },
+    "targets": { "type": "array", "items": { "type": "number" }, "description": "Bullet: the target per item, parallel to `values`. Drawn as a tick over the bar." },
+    "ranges": { "type": "array", "items": { "type": "array", "prefixItems": [{ "type": "number" }, { "type": "number" }] }, "description": "Bullet: qualitative bands as [low, high] pairs, darkest first, up to three." },
     "headers": { "type": "array", "items": { "type": "string" }, "description": "Heat map columns. (The old name 'columns' is accepted and renamed with a note.)" },
     "rows": {
       "oneOf": [
